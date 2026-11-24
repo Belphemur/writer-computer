@@ -181,3 +181,45 @@ Phases, one at a time, each validated and reviewed before the next (the project 
 - Supersedes, in ADR 2026-11-17 "Build a first-party agent pane over the claude CLI's stream-json protocol", the line that a second backend would come "over ACP": OpenCode comes through its server; ACP remains an option for Codex.
 - Research of 2026-11-23: the OpenAPI from a private v2.4.0 server, the online docs, and the open unknowns listed in phase 0. An earlier note in `SPECs/native-agent-spec.md` §9 named `session.step.streamed` and `session.idle`. In v2.4.0 these are `session.text.*` / `session.tool.*` and `session.execution.*`.
 - Related: ADR 2026-11-17 roles and adapters, ADR 2026-11-19 Writer's MCP server through adapters, ADR 2026-11-20 "Let features cooperate through owned points, optional services and rare requires", ADR 2026-11-17 "Restart claude agent sessions when their loaded config changes".
+- Phase 0 results: [SPECs/opencode-backend-spec.md](../../SPECs/opencode-backend-spec.md) (confirmed protocol, event mapping, tool-kind table, config file and permission modes, parity table, and section 10 "Risks and corrections to the ADR"). Fixtures, the recorder and scrub tools and the pinned contract: `apps/desktop/features/opencode/{fixtures,contract}/`. See "Amended 2026-11-23" below.
+
+## Amended 2026-11-23
+
+The accepted text above stays as decided. This section amends it after the phase 0 spike ([SPECs/opencode-backend-spec.md](../../SPECs/opencode-backend-spec.md)) and its review. Where they differ, this section wins.
+
+### The user's decisions (2026-11-23)
+
+- **Config: Writer's file only.** The server starts with a Writer-owned empty `XDG_CONFIG_HOME` (`<app data>/opencode/xdg-config/`, never the user's folders) and `OPENCODE_CONFIG=<Writer's file>`. Logins still work (they live in OpenCode's data directory). The user's global agents, MCP servers and rules do not apply. This replaces the Decision Outcome line "the user's own OpenCode config and logins apply as in the terminal" and the Consequences line "Neutral: the user's OpenCode config applies". Why: a large user config (about 30 MCP servers) made the first prompt of a location block for minutes; with the empty config home it took 1.7 s.
+- **Deleting a chat deletes its OpenCode session** (`DELETE /api/session/{id}`); archiving keeps it.
+- **Memory is Writer-owned in the vault:** the same `.writer/memory/` files as Claude, read into the prompt and written through Writer's MCP tools. One memory for both backends. OpenCode's own memory flag stays off.
+- **Codemode stays on** for Writer's `writer` MCP server (OpenCode's default), to save tokens. The mapper shows an `execute` call through its inner `metadata.toolCalls`: each `writer.<tool>` becomes a timeline row with its kind from the tool table, permissions stay per inner action (`writer_<tool>`), and the result goes on the `execute` row. How a failed or denied inner call shows is verified in phase 2. This replaces the Decision 4 line "Tool names are `writer_<tool>`" as a direct tool name: they are inner calls.
+
+### Decided in auto mode (the maintainer was away), review
+
+- **Permission modes are allowlists.** Every mode's ruleset is the base rule `{action:"*", resource:"*", effect:"ask"}` (`deny` in `dontAsk`) followed by the allows from the one tools adapter, last match wins, never empty. `auto` is acceptEdits plus read tools (web reads included), never a bypass; manual asks for every mutating action (edit, write, `apply_patch`, shell, webfetch, MCP write tools). Pinned per mode by a test.
+- **Sub-agent permissions are deterministic:** the mode is encoded per agent in Writer's file, and a chat-scoped "always" is re-applied to the child on `session.created{parentID}`. Inheritance of the session ruleset and config against session precedence are verified in phase 2; the design does not depend on the answer.
+- **Location:** all OpenCode code lives in `apps/desktop/features/opencode/rust/` (the feature rule): `opencode_api.rs`, `opencode_events.rs`, the server, the transport and the fake server; the pinned contract is `apps/desktop/features/opencode/contract/openapi-2.4.0.json` and the fixtures are `apps/desktop/features/opencode/fixtures/`. `agent/` never names OpenCode; an import-graph test enforces it. The Implementation Plan's affected paths `agent/opencode_events.rs`, `agent/fixtures/opencode/` and `shared/opencode/openapi-2.4.0.json` become these.
+- **"Always allow" keeps the existing vocabulary:** the web reads `addRules` / `rules[{toolName, ruleContent}]` / `setMode`; the mapper turns OpenCode's `save[]` into that shape, `bash_rules` is keyed on the shell kind and takes the backend's tool name, and phase 3 converts the chosen rule to `{action, resource, effect}`.
+- **Titles:** the one trigger and its rules stay in `title.rs`; per backend there is only a generator (`claude -p` against `POST /api/session/{id}/generate`). `session.renamed` is ignored and OpenCode's own title agent is disabled in Writer's file (`agents.title.disabled`, confirmed to stop it and its cost). `/regenerate-title` is the same for both.
+- **Turn usage** is the sum of the steps' tokens and cost (`step.ended` and `step.failed`); `session.usage.updated` is not mapped.
+- **Sessions are created lazily** on the first send, as Claude's process is.
+- **Crash recovery** asks the server's inbox and re-sends only receipts it does not hold, with a stateless `msg_` id, so a restart cannot deliver a message twice.
+- **A queued item delivered mid-execution is `MessageReceived`** (the existing contract), not a turn boundary.
+- **A child's events are buffered until the launch call's link arrives**; no heuristic; an unlinked child when the parent's execution ends is a protocol error.
+- **Phase 1 scope** widens to every Claude tool name in shared code (`changes.rs`, `edit_inverse.rs`, `subagents.rs` `LAUNCH_TOOLS`/`SUBAGENT_TYPE_KEY`, `sub_tracker.rs` with a neutral task signal, `bash_rules.rs`, `writer_prompt.rs`, `tool-kinds.ts`) with a boundary test: no Claude tool-name literal in `agent/` outside the Claude table, `claude_stream.rs` and `ClaudeAdapter`.
+- **The `Transport` trait** gains set-permission-mode and reload, its inbound path is one channel per chat that `Session` consumes like Claude's mapped stdout lines, and `unqueue` awaits the backend's answer.
+
+### Corrections to the accepted text (spike findings)
+
+1. **Resync:** the replayable log (`/api/experimental/session/{id}/log?after=`) does not replay on 2.4.0 (it returns only a `log.synced` marker). Resync is `GET /api/session/{id}/message` plus `inbox`, `permission` and `form`. Decision 2 "Resync" and Decision "Experimental routes are allowed" no longer list the log.
+2. **Turn end and queue:** `session.execution.*` ends a turn, but a queued prompt is delivered inside the running execution (one `execution.*` pair covers it).
+3. **Sub-agent link:** `session.created` with a `parentID` does not name the launching tool call; the link is `session.tool.progress.metadata.sessionID` on the parent's `subagent` call. Sub-agents are background by default: the parent's turn ends first and a synthetic `<background-result>` inbox item wakes it.
+4. **MCP:** `writer_<tool>` names are inner calls under codemode (above); runtime MCP is `PUT /api/experimental/mcp/{server}` with the body `{config: ...}`.
+5. **Permissions:** the shell action is `shell`, not `bash`; `permission.asked` for `edit` carries a unified patch; `always` stores a rule in OpenCode's database per project and also resolves the sibling requests; `reject` ends the whole turn (`execution.interrupted`, reason `shutdown`).
+6. **Models:** the first `GET /api/model` after start can be empty (wait for `model.updated`); `cost` is an array of price tiers; the context window is `limit.context`.
+7. **Cold start:** 1 to 2 s to `server listening`, not "about 6 s".
+8. **Sign-in:** there is no login probe; a missing login shows as `provider.auth` at send time (`execution.failed`, `step.failed`).
+9. **Titles:** OpenCode titles sessions itself (`session.renamed`, a small paid call even on a free chat model); see the title decision above.
+10. **Queue and skip natively:** `DELETE`/`PATCH /api/session/{id}/inbox/{inboxID}` give unqueue and send-now; `DELETE /api/session/{id}/form/{formID}?message=` is Skip; `POST /api/session/{id}/interrupt` returns `{interrupted}`.
+11. **Contract:** the OpenAPI document is `GET /openapi.json`; the API reports version 0.0.1, so the OpenCode version is taken from `GET /api/info` and put in the file name; a missing or wrong password is a 401 (observed live).
+12. **Data left in the user's OpenCode data:** sessions, saved permission rules and shell output files (`<data>/opencode/shell/<project id>/sh_*.out`, no API removes them) persist there; Writer deletes the sessions of deleted chats and says once in Settings that OpenCode keeps its own copy.

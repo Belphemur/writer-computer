@@ -17,6 +17,10 @@ export default defineConfig({
       "apps/desktop/features/obsidian-host/tests/fixtures/**",
       // Drawing files whose bytes the codec tests compare (trailing spaces, line endings).
       "apps/desktop/shared/excalidraw-fixtures/**",
+      // The OpenCode captures are written by the scrub tool and the contract is the server's own
+      // document: byte-exact, a formatter pass would hide a protocol change in the diff.
+      "apps/desktop/features/opencode/fixtures/**",
+      "apps/desktop/features/opencode/contract/**",
     ],
   },
   lint: {

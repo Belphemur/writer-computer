@@ -1,0 +1,556 @@
+# OpenCode agent backend: protocol, mapping and plan
+
+Status: phase 0 (spike) done and reviewed, 2026-11-23. Phases 1 to 5 not started. ADR: [Add OpenCode as an agent backend, driven through its v2 server](../docs/decisions/2026-11-23-add-opencode-as-an-agent-backend-driven-through-its-v2-server.md) (amended 2026-11-23 with this spec's decisions). Depends on: [native-agent-spec.md](./native-agent-spec.md) (section 9 "Other backends"), [agent-roles-spec.md](./agent-roles-spec.md), the Claude mapper `apps/desktop/src-tauri/src/agent/claude_stream.rs` and `events.rs`.
+
+Where things live (the feature rule: everything OpenCode-specific is in the feature, `agent/` never names it):
+
+- `apps/desktop/features/opencode/rust/`: `opencode_api.rs`, `opencode_events.rs`, the server, the transport, the fake OpenCode server (phases 2 and 3).
+- `apps/desktop/features/opencode/contract/openapi-2.4.0.json`: the pinned contract. It is the document `GET /openapi.json` of an `opencode serve` v2.4.0, fetched 2026-11-23 (`info.title` "opencode HttpApi", `info.version` "0.0.1": the API reports no real version, so the OpenCode version is in the file name, from `GET /api/info`). `tools/s12_rest.py` re-fetched it the same day and it was identical. No core code reads it, so it lives under the feature.
+- `apps/desktop/features/opencode/fixtures/`: the scrubbed captures; `fixtures/tools/`: the recorder, the scrubber and the contract refresh (README there: how to update after an OpenCode upgrade).
+
+Everything marked "confirmed" was recorded against `opencode v2.4.0` with real models; "verify P<n>" says which phase settles an item that was not captured.
+
+## 1. Design principles
+
+The order is the rule: DRY > SOLID > KISS ([engineering-philosophy](../.agents/skills/engineering-philosophy/SKILL.md)).
+
+**DRY: one source for each piece of knowledge**
+
+- *Wire types:* OpenCode's request and event shapes are written once, in `opencode_api.rs` (serde types for only the routes and events Writer uses). A contract test checks every route, method and field in that file against `openapi-2.4.0.json`. No route string is written anywhere else: the transport calls typed functions of that file. The `used.json` list of the tools folder is an interim stand-in that phase 2 replaces by the list derived from `opencode_api.rs`.
+- *Event mapping:* one pure function, `opencode_events::map(&mut MapState, &WireEvent) -> Vec<AgentEvent>`, over a table keyed by event type (section 6). Its twin is `claude_stream.rs`; both feed the same `AgentEvent`.
+- *Tool names:* one table per backend, `tool name -> neutral kind (+ argument names)`, is the only place a backend's tool names appear (section 7). The Changes card, `edit_inverse.rs`, `subagents.rs`, `bash_rules.rs`, `writer_prompt.rs`, the permission preview and `tool-kinds.ts` read kinds. Claude's table reproduces today's names exactly.
+- *Cards, state and vocabulary:* permission, question, sub-agent, steer, queue, usage, title and the Changes card reuse the existing `AgentEvent` and `AgentCommand` types and the existing web cards. The "Always allow" suggestion keeps the shape the web already reads (`addRules` / `setMode`); OpenCode's `save[]` is turned into it by the mapper (section 6). Session state (queue, steer, busy, restarts, sub-agent tracking in `sub_tracker.rs`) stays in the one `Session` state machine.
+- *No new `AgentEvent` variants and no new fields* (checked row by row in section 6). Where OpenCode has more than Writer shows (`session.renamed`, `experimental.job.updated`, `session.step.first-token`), the event drives an existing behaviour or is ignored.
+- *Settings, roles, MCP, modes:* roles come from `shared/agent-roles.json` through the role adapter; Writer's MCP launch and its allow rules come from the one `ToolsAdapter`; the config file is built by one function (section 8) from those, per permission mode, not by hand.
+
+**SOLID**
+
+- *`Transport` is a small trait* (section 5): start, send, unqueue, interrupt, answer permission, answer question, set model, set permission mode, reload, close, plus the one inbound channel. `StdioTransport` (Claude, today's child) and `OpencodeTransport` implement all of it because `Session` calls all of it; neither implements anything it does not use, and there is no catch-all `Backend` trait. What differs per backend and is not transport (tool table, role adapter, tools adapter, title generator) stays in its own small trait or table.
+- *Dependency inversion:* the agent depends on the `agent.backends` point (`features/points.rs`); the `opencode` feature answers it. `agent/` and `features/agent/` never import or name `opencode` (an import-graph test, phase 2).
+- *Single responsibility:* `OpencodeServer` (one per window and vault: process, password, port, ready check, the one event subscription, fan-out by `sessionID` to a channel per chat) is its own owner, separate from the per-chat `OpencodeTransport` (one session id, its calls, its routing state). The mapper is pure (no IO, no clock).
+- *Open/closed:* a new OpenCode event or tool is a table entry; a new backend is a transport, a mapper, two tables and a title generator.
+
+**KISS**
+
+- The fewest endpoints that cover the parity table (section 9): `POST /api/session`, `GET /api/session/{id}`, `DELETE /api/session/{id}`, `PATCH /api/session/{id}`, `POST .../prompt`, `POST .../interrupt`, `POST .../permission/{id}/reply`, `POST .../form/{id}/reply`, `DELETE .../form/{id}`, `DELETE .../inbox/{id}`, `PATCH .../inbox/{id}`, `POST .../model`, `POST .../agent`, `POST .../generate`, `GET .../message`, `GET .../inbox`, `GET .../permission`, `GET .../form`, `GET /api/model`, `GET /api/info`, `GET /api/mcp`, `GET /api/skill`, `GET /api/command`, `GET /api/event`, `GET`/`DELETE /api/permission/saved`. Everything else (diff, revert, fork, compact, shell, pty, worktree, vcs, artifacts, voice, automation) is unused.
+- Stable routes first. Experimental routes only where they buy something concrete: `PUT /api/experimental/mcp/{server}` (change Writer's MCP server at runtime without a server restart; confirmed) and `PUT /api/experimental/session/{id}/instructions/entries/{key}` (the per-chat Writer system block and memory without rewriting the config file for each chat; confirmed). The replayable log is not used: it does not replay on 2.4.0 (4.10).
+- No speculative abstraction for Codex or ACP: `Transport` has two implementations because two backends exist.
+
+**Where the principles pulled against each other**
+
+1. *DRY vs KISS, titles:* one trigger and its rules (after 2 exchanges, never over a title the user set, `/regenerate-title`) stay in `title.rs`; only the generator differs (`claude -p` against `POST /api/session/{id}/generate`). A per-backend generator is one function, not a second title path, so DRY and KISS agree; OpenCode's own `session.renamed` would be a second trigger and is switched off (decision A5).
+2. *DRY vs correctness, tool tables:* the edit input differs per backend in argument names (`path` relative, `oldString`, `newString`, `replaceAll` against Claude's `file_path`, `old_string`, ...). The table carries the argument names next to the kind (one table), instead of normalising inputs in the mapper (a second, hidden table).
+3. *KISS vs SOLID, `Transport` size:* ten methods is wide. They are exactly the `Session`'s calls; splitting into `Sender` / `Canceller` / `Answerer` would be anticipated structure with one implementer each, so KISS wins here (the philosophy's own rule).
+4. *DRY vs the existing vocabulary, "Always allow":* OpenCode's `save[]` patterns could have become a new suggestion type. They are mapped onto Claude's `addRules`/`setMode` shape instead (DRY: the web, `bash_rules` and the persist logic stay one), at the cost of a mapping layer and the word "toolName" meaning an action.
+5. *Writer owning memory vs OpenCode's own:* the user chose one Writer-owned memory for both backends (A4), which costs a phase 3 task (memory read and write tools through Writer's MCP server) that Claude does not need because its CLI has its own memory tool.
+
+## 2. Decisions
+
+**The user's, 2026-11-23**
+
+- **U1 Config.** Writer's file only: the server starts with a Writer-owned empty `XDG_CONFIG_HOME` (`<app data>/opencode/xdg-config/`, never the user's folders) and `OPENCODE_CONFIG=<app data>/opencode/<vault id>.json`. Logins still resolve (they live in OpenCode's data directory, confirmed). The user's global agents, MCP servers and rules do not apply. Reason found in the spike: a large user config made the first prompt of a location block for minutes.
+- **U2 Deleting a chat** deletes its OpenCode session (`DELETE /api/session/{id}`); archiving keeps it.
+- **U3 Memory.** Writer-owned in the vault: the same `.writer/memory/` files as Claude, read into the prompt and written through Writer's MCP tools. One memory for both backends. OpenCode's own memory flag stays off.
+- **U4 Codemode stays on** for Writer's `writer` MCP server, to save tokens (OpenCode's default; no `codemode:false`). Consequences are in 4.7, 6 and 7.
+
+**Decided in auto mode (the maintainer was away), review**
+
+- **A1 Permission modes are allowlists.** Every mode's ruleset starts with the base rule `{action:"*", resource:"*", effect:"ask"}` (`deny` in `dontAsk`), followed by the allows from the one tools adapter; last match wins; the rules are never empty. `auto` is acceptEdits plus read tools (web reads included), never a bypass. Manual asks for every mutating action. Section 8.
+- **A2 Sub-agent permissions are deterministic:** the mode is encoded per agent in Writer's file; a chat-scoped "always" is re-applied to the child on `session.created{parentID}`. Sections 4.5 and 8.
+- **A3 Location:** all OpenCode code, the pinned contract and the fixtures live under `apps/desktop/features/opencode/`; `agent/` never names it.
+- **A4 "Always allow" vocabulary:** the existing suggestion shape, mapped from `save[]`; `bash_rules` keyed on the shell kind.
+- **A5 Titles:** the one trigger stays in `title.rs`; per backend only a generator; `session.renamed` ignored and OpenCode's own title agent disabled in Writer's file (`agents.title.disabled: true`, confirmed to stop it and its cost).
+- **A6 Usage:** turn usage is the sum of the steps' tokens and cost; `session.usage.updated` is not mapped.
+- **A7 Lazy session creation** on first send, for parity with Claude's lazy process start.
+- **A8 Restart recovery** re-sends only what the server's inbox does not hold (4.6, 5).
+- **A9 A queued item delivered mid-execution is `MessageReceived`**, the existing contract; no turn-boundary convention.
+- **A10 Strict sub-agent link:** events of a child are buffered until the launch call's link arrives; no heuristic; an unlinked child at the parent's next execution end is a protocol error.
+
+## 3. Spike setup
+
+Each scenario ran against a server Writer-style: its own `opencode serve --hostname 127.0.0.1 --port <free>`, `OPENCODE_SERVER_PASSWORD=<random>`, `OPENCODE_CONFIG=<file>`, `OPENCODE_DISABLE_CLAUDE_CODE=1`, `OPENCODE_DISABLE_AUTOUPDATE=1`, cwd = an empty temp dir, the real `HOME` (the login) and an empty `XDG_CONFIG_HOME`. Models: `opencode/beam-free` for every scenario, `opencode/hy4-flash-free` for the image one; both cost 0 in `GET /api/model`. About 25 prompts were sent in total over the phase and its fix pass (several were reruns after script mistakes), plus error scenarios that never reached a model. OpenCode's own title agent was not free: `session.usage.updated` showed about $0.00005 for it on each new session even on a free chat model, until it was disabled by config. The spike left 18 sessions in the user's OpenCode data that the fix pass deleted through the server API; it also left about 13 shell output files that the API cannot remove (4.3).
+
+## 4. Protocol, confirmed per scenario
+
+Wire basics (confirmed). HTTP Basic, user `opencode`, the random password; a request with no or a wrong password gets `401 {"_tag":"UnauthorizedError","message":"Authentication required"}` (observed live, `rest.json`). `GET /api/info` answers `{version, pid, hostname, urls, paths, capabilities}` and needs no session. The OpenAPI document is `GET /openapi.json`. Ready is the stdout line `server listening on http://127.0.0.1:<port>`. `GET /api/event` is one SSE stream for the server: `data: {id, created, type, location?, data, durable?, metadata?}` frames, a `: heartbeat` comment about every 10 s, first frame `server.connected`. `durable: {aggregateID, seq, version}` is present on durable events only; the streaming deltas (`session.text.delta`, `session.reasoning.delta`, `session.tool.input.delta`, `session.usage.updated`, `permission.*`, `form.*`) have none. Every session event carries `data.sessionID`. A session runs in a `location` (the directory) that boots lazily. Errors are `{_tag, message, ...}` bodies (`PermissionNotFoundError`, `FormNotFoundError`, `SessionNotFoundError`, `InvalidRequestError`, `McpServerNotFoundError`, `UnauthorizedError`).
+
+### 4.1 Plain text turn with reasoning (`text`)
+
+`POST /api/session {location:{directory}, model:{id, providerID, variant?}, agent?, permissions?, parentID?}` returns `{data:{id: "ses_..."}}`; `POST /api/session/{id}/prompt {text, files?, agents?, skills?, delivery?, resume?, id?}` returns the admitted item at once (`{data:{id:"msg_...", type:"user", payload, delivery:"steer"}}`). Event order for one step:
+
+`session.created`, `session.inbox.enqueued` (the prompt), `session.execution.started`, `session.instructions.updated` (hashes of the instruction entries, once), `session.inbox.delivered`, `session.step.started {agent, model, assistantMessageID}`, `session.step.first-token`, `session.reasoning.started {ordinal, native}`, `session.reasoning.delta {ordinal, delta}`, `session.text.started {ordinal}`, `session.reasoning.ended {ordinal, text}`, `session.text.delta {ordinal, delta}`, `session.text.ended {ordinal, text}`, `session.step.streamed`, `session.step.ended {finish, rawFinish, tokens, cost}`, `session.usage.updated {cost, tokens}`, `session.execution.succeeded`.
+
+- Blocks are keyed by `assistantMessageID` and an `ordinal` per kind (text and reasoning each count from 0), not by a block index.
+- `tokens` is `{input, output, reasoning, cache:{read, write}}`; `input` is the non-cached input of that step.
+- `GET /api/session/{id}/message` returns, newest first, items typed `idle {outcome}`, `assistant {content:[{type:"reasoning"|"text"|"tool", ...}], finish, tokens, cost, agent, model, time}`, `user {text, files?}`, `synthetic`, with a base64 `cursor`. Tool content: `{type:"tool", id, name, state:{status:"completed"|"error", input, content[], metadata, error?}, time}`. It carries what a transcript needs and is the resync source (4.10).
+- `session.renamed {title}` arrives by itself after the first step (OpenCode runs its own `title` agent), unless `agents.title.disabled` is set: then no event and the title stays unset (confirmed, cost 0).
+- Never emitted: `session.idle`, `session.status`. A turn ends with exactly one of `session.execution.succeeded | failed {error} | interrupted {reason}`.
+- `GET /api/session/{missing}` is a 404 `SessionNotFoundError` (confirmed): the "session missing" signal for the seeded replay.
+
+### 4.2 Edit under `ask` (`edit`)
+
+Config rule `{"action":"edit","resource":"*","effect":"ask"}` (last match wins; it overrides the agent's default `*: allow`). Events: `session.tool.input.started {id, name:"edit"}`, `session.tool.input.ended {text}`, `session.tool.called {id, input, executed:false}`, then `permission.asked`, `permission.replied {sessionID, requestID, reply}`, `session.tool.success {content:[{type:"text"}], metadata}`.
+
+- Edit tool input (confirmed): `{path: "notes.md" (relative to the session cwd), oldString, newString, replaceAll}`. Read tool input: `{path}`.
+- `permission.asked.data`: `{id: "per_...", sessionID, action: "edit", resources: ["notes.md"], save: ["*"], metadata: {files:[{file, patch, status, additions, deletions}]}, source: {type:"tool", messageID, id: <tool call id>}}`. The patch is a unified diff. The same `metadata.files[]` is in `session.tool.success.metadata`.
+- The file is untouched at `tool.called` and at `permission.asked`, so a pre-image can be read then. With an `allow` rule there is no `permission.asked` and the tool runs right after `tool.called`: the capture race Claude has, settled by `edit_inverse.rs` from the same input.
+- `GET /api/session/{id}/permission` lists the pending requests. `POST /api/session/{id}/permission/{requestID}/reply {decision: "once"|"always"|"reject", message?}` returns 204; an unknown id is a 404 `PermissionNotFoundError`.
+- `GET /api/session/{id}/diff` returned `{data: []}` in a temp dir that was not a git repository (snapshots appear to need one; not proven). Writer keeps its own Changes card, so this route is unused.
+
+### 4.3 Shell under `ask`: reject and always (`shell-reject`, `shell-always`)
+
+- The shell tool is `shell`, input `{command}`; the permission action is `shell` (a rule on `bash` matches nothing). `permission.asked.data`: `{action: "shell", resources: ["echo hello"], save: ["echo *"], source}`.
+- `reject`: `permission.replied {reply:"reject"}`, `session.tool.failed {error:{type:"aborted", message:"The user declined this tool call"}}`, the step ends `session.step.failed` with the aborted error, and the turn ends `session.execution.interrupted {reason: "shutdown"}` (the reason is not `user`; the label is the server's, and the stop happens at once, not at a server shutdown). The model does not get to continue (Claude's Deny continues the turn). Whether a reject of one request rejects every pending request of the session, and whether `message` reaches the model: unverified, verify P2.
+- `always` on the first of two pending requests resolved both: the server emitted `permission.replied {reply:"always"}` for the sibling too, and Writer's own reply to the sibling answered 404. The saved rule is `GET /api/permission/saved[?projectID=]` -> `{id: "psv_...", projectID, action: "shell", resource: "echo *"}`: stored in OpenCode's database per project, persisted across sessions, removable with `DELETE /api/permission/saved/{id}`. Writer keeps no copy.
+- The shell run itself leaves an output file under OpenCode's data directory (`<data>/opencode/shell/<project id>/sh_*.out`): Writer cannot remove it through the API.
+
+### 4.4 Question (`question`)
+
+The agent's `question` tool (allowed by default). Tool input: `{questions:[{question, header, options:[{label, description}], multiple?}]}`. Then `form.created {form: {id: "frm_...", sessionID, title: "Questions", metadata: {kind: "question", tool: {messageID, id: <tool call id>}}, fields: [{key: "q0", title: <header>, description: <question>, type: "string", options: [{value, label, description}], custom: true}]}}`. `form.replied {id, sessionID, answer}` follows the reply.
+
+- Reply: `POST /api/session/{id}/form/{formID}/reply {answer: {q0: "<label or typed text>"}}` -> 204; an unknown id is a 404 `FormNotFoundError`. The tool then succeeds with text `User has answered your questions: "<question>"="<answer>"...` and `metadata.answers: [["pear"]]`.
+- `custom: true` is the "Other" row. Skip: `DELETE /api/session/{id}/form/{formID}?message=<reason>` (204 per the OpenAPI; the `message` is what the asker is told; verify P2 that the agent receives it). A multi-select field type with array values exists in the OpenAPI (verify P2).
+- `GET /api/session/{id}/form` lists pending forms. No `permission.asked` is raised for a question.
+
+### 4.5 Sub-agent (`subagent`)
+
+Config `agents.writer-explorer = {mode: "subagent", description, system, model: "provider/model", permissions: [...]}` (the field is `system`, not `prompt`). `GET /api/agent` lists the built-ins `build` (primary), `plan` (primary, edit denied), `general` and `explore` (subagents), `title`, `summary`, `compaction`, plus configured ones. Config agents accept `disabled: true`.
+
+- Launch in the parent: tool `subagent`, input `{agent: "writer-explorer", description, prompt}`. After `tool.called`: `session.created {parentID, agent, title: <description>, model}` for the child, then `session.tool.progress {id: <launch call id>, metadata: {sessionID: <child>, status: "running"}}`, `experimental.job.updated {info:{kind:"subagent", id, sessionID: <parent>, childSessionID, status:"running", agent, description}}`.
+- **The only link from the parent's tool call to the child session is `session.tool.progress.metadata.sessionID`.** The mapper buffers a child's events until it arrives and uses no heuristic (A10); a child still unlinked when the parent's execution ends is a protocol error (`Error{protocol}`).
+- The launch call's result returns at once ("The subagent is working in the background (sessionID: ses_...). You will receive a `<background-result kind="subagent">` message..."). The parent's turn then ends (`session.execution.succeeded`) while the child runs; the child has its own `execution.started`, steps, tool calls and `execution.succeeded`.
+- Result: the server enqueues a `synthetic` inbox item in the parent: `{payload:{text: "<background-result kind=\"subagent\" sessionID=\"...\" state=\"completed\" description=\"...\">\n<report>\n</background-result>", metadata: {source: "subagent", childID, agent, state: "completed"}}, delivery: "steer"}`, `experimental.job.updated {status: "completed"}`, and the parent wakes: a new `session.execution.started` with no user prompt, its step relays the report, `session.execution.succeeded`. States other than `completed` were not captured (verify P2).
+- Permissions of a child: the child's `session.created` shows no session-level permissions, and config-level rules apply to every session. **Unverified, verify P2:** whether a child inherits the parent's session-level ruleset, and config against session precedence (a child's edit under `ask` and a session `allow`). The design does not depend on the answer (A2): the mode is encoded per agent in Writer's file (`agents.<n>.permissions`, deterministic, no race); a chat-scoped "always" (a session ruleset entry) is re-applied to the child by `PATCH /api/session/{child}` on `session.created{parentID}` before the child's first step, which the buffering of A10 allows.
+
+### 4.6 Interrupt, steer, queue and receipts (`interrupt`, `steer-queue`)
+
+- `POST /api/session/{id}/interrupt` -> `{interrupted: true}` (false when idle). During a running `shell`: the process is killed, `session.tool.failed {error:{type:"tool.execution", message:"Command interrupted by the user..."}}`, `session.step.failed {error:{type:"aborted", ...}, tokens, cost}`, `session.execution.interrupted {reason:"user"}`. `?resume=true` resumes pending steering input (not exercised).
+- Prompt `delivery`: default `steer`. **Steer** does not cut the running tool: it is `inbox.delivered` at the next step boundary, after the tool finished. **Queue** is `inbox.delivered` after the step that ends the turn, still inside the same execution: one `execution.started` / `execution.succeeded` pair covered the original prompt, the steer and a queued item. Writer maps each delivery to `MessageReceived` (A9, the existing contract); `TurnFinished` stays tied to `execution.*`.
+- Events: `session.inbox.enqueued {inboxID, item:{type:"user", payload, delivery}}` on admission, `session.inbox.delivered {inboxID}` when the model gets it, `session.inbox.cancelled {inboxID}`, `session.inbox.delivery.changed` (on PATCH).
+- `GET /api/session/{id}/inbox` lists what is waiting. `DELETE /api/session/{id}/inbox/{inboxID}` cancels an undelivered item and answers 204 whether or not it cancelled ("unavailable items are a no-op"); the outcome is the first of `inbox.cancelled` or `inbox.delivered` for that id. `PATCH .../inbox/{inboxID} {delivery:"steer"}` turns a queued item into a steer.
+- Writer's "steer now" (Cmd+Enter, which cuts the running step) is `prompt delivery:steer` then `interrupt?resume=true`: not captured, verify P2.
+- **Receipts and restart:** `POST .../prompt` accepts a caller-chosen `id` (a `msg_`-prefixed id). Writer passes a stateless `msg_<derived from its uuid>`, so a re-send of the same message after a crash is the same item; verify P2 that a duplicate id is rejected or idempotent, and that a client-chosen id does not break ordering (OpenCode's own ids embed a time prefix; if ordering matters, build ids in the same time-prefixed format).
+
+### 4.7 Writer's MCP server through config (`mcp-codemode`, `mcp-direct`)
+
+`mcp.servers.writer = {type:"local", command:[...], codemode?, environment?, cwd?, timeout?}` (remote: `{type:"remote", url, headers, oauth}`). With a trivial newline-delimited JSON-RPC stdio server (protocol `2025-06-18`): `GET /api/mcp` -> `{name:"writer", status:{status:"connected"}}` right after start, before any session; failed servers show `{status:"failed"|"needs_auth", error}`. A server script that exits (an ES-module `require` error was seen) is `failed` with the process's stderr in `error`: never show that text unredacted (it can hold paths).
+
+- **Default (`codemode` on), Writer's configuration (U4):** the model sees one `execute` tool and calls it with JavaScript: tool name `execute`, input `{code: "const result = await tools.writer.note_count();\nreturn result;"}`, progress `session.tool.progress {metadata: {toolCalls: [{tool: "writer.note_count", status}]}}` (status `running`, then `completed`), the result text on `session.tool.success`. The permission is per inner call: action `writer_note_count`, `resources: ["*"]`, `source.id` = the `execute` call id; the `execute` call itself raises no permission. How a failed or denied inner call shows in `toolCalls` (status words, the error text) was not captured: verify P2.
+- **`"codemode": false`** (recorded for comparison, not used): a plain tool call named `writer_note_count` (`<server>_<tool>`), input `{}`, the same permission action.
+- Runtime: `PUT /api/experimental/mcp/{server}` with body `{config: <the config object>}` -> 204, the server appears connected in `GET /api/mcp`; again with changed config -> 204; `POST /api/experimental/mcp/{server}/disconnect` and `DELETE /api/experimental/mcp/{server}` -> 204 (404 `McpServerNotFoundError` when unknown). A bare config body is a 400 (`Missing key ["config"]`).
+- OpenCode also lists its own `opencode_console` MCP server (`needs_auth`) always.
+
+### 4.8 No provider, bad model, no login (`error-*`)
+
+`POST /api/session` accepts any model id (200). The failure comes at the prompt, as events, with no model call:
+
+- unknown model or provider: `session.execution.failed {error:{type:"provider.no-route", message:"Model unavailable: <provider>/<model>"}}`;
+- provider without credentials: `session.step.failed {error:{type:"provider.auth", message}}` then `session.execution.failed` with the same error (the message named the user's cloud SSO: replaced in the fixture; Writer shows it in the card only, never logs or stores it).
+- `GET /api/provider` lists `{id, name, activation:"enabled", ...}` for a provider that has no credentials: **there is no login probe**; auth-missing is detected from `provider.auth` at send time.
+- Privacy: `GET /api/provider` carries per-provider `headers` (an organisation id) and `settings` (base URLs; one user provider had an API key field). Writer's client type for it names only `id`, `name`, `activation`; the raw object is never logged or sent to the webview.
+
+### 4.9 What ends a turn; usage; context
+
+- Turn end: `session.execution.succeeded | failed | interrupted` (and `GET .../message` shows an `idle {outcome}` item). No `session.idle` or `session.status`.
+- Usage: `session.step.ended {tokens, cost, finish}` and `session.step.failed {tokens, cost}` per step. `session.usage.updated` carries running session totals that also include title and generate calls, so it is not used (A6).
+- `GET /api/model` entries have `limit: {context, input?, output}`, `cost` as an array of price tiers (`{input, output, cache:{read, write}}`, later tiers with `tier:{type:"context", size}`), `capabilities: {tools, input:[text,image], output, temperature, reasoning?}`, `variants: [{id, settings:{reasoningEffort}}]`, `enabled`, `status`.
+- Race: the first `GET /api/model` after the server starts can return `data: []`, and 268 models a few seconds later ("the snapshot may precede initial plugin settlement"); `model.updated` announces it.
+
+### 4.10 SSE resync (`steer-queue`.`log-resync`)
+
+- `durable.seq` is per session, starts at 0 and increases by 1 across durable events; deltas have none, so the stream cannot tell Writer that a delta was dropped.
+- `GET /api/experimental/session/{id}/log?after=<seq>&follow=false` returned only `data: {"type":"log.synced","aggregateID":"ses_...","seq":39}` for `after=0`, a mid value, a future value and no `after`, and `follow` omitted (6 s read). **It never replayed an event.** The ADR's plan to resync from it does not work on 2.4.0.
+- Resync is `GET /api/session/{id}/message` (reconcile into the transcript by message id) plus `GET .../inbox`, `GET .../permission` and `GET .../form` for what is pending. The stream is reopened with `GET /api/event`; `?types=a,b` filters.
+
+### 4.11 Other controls and calls
+
+- `POST /api/session/{id}/model {model:{id, providerID, variant?}}` -> 204 + `session.model.selected` (a variant is an effort level: beam-free has low..max, hy4-flash-free has none and high). `POST /api/session/{id}/agent {agent}` -> 204 + `session.agent.selected` (the `plan` agent denies `edit`).
+- `PATCH /api/session/{id} {permissions}` **replaces** the session's ruleset (204 + `session.permissions`); `POST /api/session` accepts `permissions` and `GET` returns them.
+- `PUT .../instructions/entries/{key} {value}` (key `^[a-z0-9][a-z0-9._-]*$`): 204; `GET .../entries` -> `{data:[{key, value}]}`; a 70 kB value was accepted (the server has a size limit: `InstructionEntryValueTooLargeError`, 413); changes apply at the next step boundary.
+- `POST /api/session/{id}/generate {prompt}` -> `{data:{text, tokens, cost}}` in 1.3 s on a free model, **no events**, on the chat's own model, its tokens added to the session totals (confirmed). It is the title generator (decision A5).
+- `GET /api/command` -> `[{name, description}]` (`init`, `review`, `goal`); `GET /api/skill` -> `[{id, name, autoinvoke, path, content}]` (never forward `path` or `content` to logs); `GET /api/agent`.
+- Files: `prompt.files[]` of `{uri, name?, source?:{type:"inline"|"uri", uri?}, mention?:{start,end,text}}`. The server reads the bytes itself and stores them in the user item as `{data (base64), mime, source, name, mention}`: an inline `data:image/png;base64,...` URI and a `file://` URI both worked, and the model saw the image and the note without a tool call. A plain `@path` in the text is just text.
+
+## 5. Transport
+
+All calls go through the shared HTTP client with the Basic header, off the UI thread (`commands::blocking`); never log the password, prompts, tool output or note text.
+
+**The trait** (`agent/transport.rs`, Tauri-free):
+
+| Method | Claude (`StdioTransport`) | OpenCode (`OpencodeTransport`) |
+| --- | --- | --- |
+| `start(req)` | spawn the child (`--session-id`/`--resume`) at the first send | `POST /api/session` at the first send, id stored as the chat's session id |
+| `send(outgoing) -> Receipt` | write the user line | `POST .../prompt {id, text, files, delivery}`; the reply (200) is the admission receipt |
+| `unqueue(receipt) -> bool` | `cancel_async_message` | `DELETE .../inbox/{id}`, then wait for the first of `inbox.cancelled` (true) or `inbox.delivered` (false), with a timeout; the call awaits the answer |
+| `interrupt()` | write `interrupt`, kill after 5 s | `POST .../interrupt`, wait for `execution.interrupted` |
+| `answer_permission(...)` | `control_response` | `POST .../permission/{id}/reply` (a 404 on a sibling the server already resolved is swallowed) |
+| `answer_question(...)` | `encode_question_answer` | `POST .../form/{id}/reply`, or `DELETE .../form/{id}?message=` for skip |
+| `set_model(model, effort)` | `set_model` control request, restart on effort | `POST .../model {variant}` (live) |
+| `set_permission_mode(mode)` | `set_permission_mode`, respawn on failure | `PATCH /api/session/{id} {permissions}` and `POST .../agent` for plan |
+| `reload()` | restart with `--resume` | `POST /api/location/reload` and a fresh instruction entry (verify P3) |
+| `close()` | kill the process group | none (the server is shared); `DELETE /api/session/{id}` when the chat is deleted (U2) |
+
+**Inbound path.** Each transport pushes `AgentEvent`s (its pure mapper's output) and a final `Ended{reason}` into one `mpsc` channel per chat, which `Session` consumes in its single event loop exactly as it consumes Claude's mapped stdout lines today. For OpenCode, `OpencodeServer` owns the one `GET /api/event` connection, parses frames to typed wire events and fans them out by `data.sessionID` to the channel of the chat that owns the session (a child session goes to its parent's chat once linked, 4.5); events for an unknown session are dropped and counted.
+
+**Receipt and ack semantics.** `send` returns a `Receipt {message_id, backend_id}` when the backend has admitted the message (OpenCode: the 200 of the prompt call). The `Session` marks the message "sent", `MessageReceived` marks it "taken" (the model got it: `inbox.delivered`), and only a "sent, not taken" message can be unqueued. `unqueue` never answers "cancelled" without the backend's confirmation.
+
+**Flows**
+
+- **Start (`OpencodeServer`, once per window and vault, on the first OpenCode chat).** Write Writer's config file atomically (0600) under `<app data>/opencode/<vault id>.json` and create the empty config home `<app data>/opencode/xdg-config/` (0700). Spawn `opencode serve --hostname 127.0.0.1 --port <free>` through `ProcManager` with the consent, `PATH` and process group of `claude`, env `OPENCODE_SERVER_PASSWORD`, `OPENCODE_CONFIG`, `XDG_CONFIG_HOME` (the empty one), `OPENCODE_DISABLE_CLAUDE_CODE=1`, `OPENCODE_DISABLE_AUTOUPDATE=1`, cwd = vault root; the real `HOME` is untouched.
+- **Ready.** Wait for `server listening on` on stdout (1 to 2 s in the spike), then `GET /api/info`: version `>= 2.4.0` else refuse naming it. Open `GET /api/event` and wait for `server.connected` before the first session call. Read `GET /api/model` after `model.updated` (the first snapshot can be empty).
+- **Auth.** Basic `opencode:<password>` on every request including the event stream; a missing or wrong password is a 401 (confirmed).
+- **Session per chat, lazily (A7).** The first send does `POST /api/session {location:{directory: vault root}, model, agent?, permissions}` then the prompt; its id goes into the note. A resume sends to the stored id; `GET /api/session/{id}` 404 `SessionNotFoundError` means missing and gets the note-replay seeding Claude uses. Deleting a Writer chat deletes its session (`DELETE /api/session/{id}`, U2); archiving keeps it.
+- **Send.** `POST .../prompt {id, text, files?, delivery?}`; the location boots on this call (1.7 s with Writer's empty config). Run it off the UI path with a long timeout; the pane shows "Starting" meanwhile.
+- **Steer / queue.** Steer = `delivery:"steer"` (lands at the next step boundary); queue = `delivery:"queue"`; unqueue = the table above; send-now = `PATCH .../inbox/{id} {delivery:"steer"}`; "cut the step and send" = steer then `interrupt?resume=true` (verify P2).
+- **Interrupt.** `POST .../interrupt`, then wait for `session.execution.interrupted`; queued items stay parked after an interrupt and Writer cancels them with `DELETE .../inbox/{id}` (Claude drops its queue on stop).
+- **Permission and question.** As in the table and 6.
+- **Sub-agent routing.** 4.5: buffer until the link, route to the parent chat, answer a child's permission through the child's session id, `by` = the child's role.
+- **Resync.** On a stream drop or a send failure: reconnect `GET /api/event`; for each open chat `GET .../message` (+ `inbox`, `permission`, `form`), reconcile by message id, then resume mapping. There is no replay (4.10).
+- **Crash and restart (A8).** The server's exit or a refused connection ends each open OpenCode chat with `SessionEnded{exit}` and `Error{process-exited}`; the next send restarts the server (new port, new password, config rewritten) and the chat resumes by session id. For every message the `Session` holds as "sent, not taken", the transport asks `GET /api/session/{id}/inbox` (and `GET .../message` for already-delivered items) and re-sends only receipts absent from both, with the same stateless `msg_` id so a duplicate cannot become a second delivery. Fake-server test: a crash after admission, a restart, exactly one delivery.
+- **Stop.** On window or vault close: SIGTERM to the process group; a SIGTERM to the process alone with an open stream took about 10 s, a group kill under a second. Escalate to SIGKILL after about 15 s. Confirm by port or child pid; the user's own `opencode serve --service` also matches a pattern search: never kill by pattern.
+
+## 6. Event to `AgentEvent` mapping
+
+One pure table in `features/opencode/rust/opencode_events.rs`. **`MapState`** holds only what is not in the event: the open blocks per `assistantMessageID`; the model per `assistantMessageID`; the launch-call links (child session -> launch call id) and the buffered events of unlinked children; child -> role (`by`); the last input per tool call id (to give a permission card its `input`); pending forms (form id -> the questions, to rebuild `answers`); the `execute` calls and the inner rows already emitted; each model's `limit.context` (for `Usage.context_window`); the turn usage baseline (the running sums since `execution.started`). "Runner" is the existing `Session`, unchanged.
+
+| OpenCode event | `AgentEvent` | Notes |
+| --- | --- | --- |
+| `server.connected`, `GET /api/mcp`, `/api/skill`, `/api/command`, `/api/info` | `SessionStarted {session_id, model, cwd, permission_mode, tools: [], slash_commands, skills, mcp_servers, cli_version}` | Synthesised once by the transport after the first session is created. `tools` has no list endpoint: empty. MCP states map onto `McpServerStatus`. |
+| `session.execution.started` | none | `Session` goes busy; a wake with no user message is a turn started by a background result. Resets the turn usage baseline. |
+| `session.step.started {agent, model, assistantMessageID}` | none | Fills `MapState`. |
+| `session.text.delta {assistantMessageID, ordinal, delta}` | `TextDelta {message_id, block_index: ordinal, text}` | Volatile. |
+| `session.text.ended {text}` | `Text {message_id, block_index: ordinal, text}` | |
+| `session.reasoning.started` / `.delta` / `.ended` | `Thinking {phase: Start / Delta / End, text, estimated_tokens: None}` | The end event carries the full text. |
+| `session.tool.input.started {id, name}` | `ToolCallStarted {tool_call_id: id, message_id, tool: name, parent_tool_call_id}` | `parent_tool_call_id` set for a linked child's calls. |
+| `session.tool.input.delta` | `ToolCallInputDelta {tool_call_id, partial_json}` | Not captured; the model streamed whole inputs. |
+| `session.tool.called {id, input}` | `ToolCallInput {tool_call_id, input}` | Also stored for the permission card. |
+| `session.tool.success {content[], metadata}` | `ToolCallFinished {output: text parts joined, is_error: false, outcome: Ok, truncated: metadata.truncated}` | For an `execute` call the output is the call's result (below). |
+| `session.tool.failed {error}` | `ToolCallFinished {output: error.message, is_error: true, outcome: Rejected if error.type == "aborted", else Error}` | A declined permission is `aborted`; an interrupted shell is `tool.execution`. |
+| `session.tool.progress {metadata.sessionID}` | none (registers and flushes the child) | Releases the child's buffered events with `parent_tool_call_id`. |
+| `session.tool.progress {metadata.toolCalls}` (`execute`, codemode) | `ToolCallStarted` / `ToolCallInput` / `ToolCallFinished` per inner call | Each inner `writer.<tool>` is a row with a synthetic id `<execute call id>:<n>`, `tool: "writer_<tool>"` (so its kind comes from the table), `parent_tool_call_id` = the `execute` call, finished when its status leaves `running` (failed or denied inner statuses: verify P2). The `execute` call is one row of kind `code` that nests its inner rows and carries the result text; its `code` input is shown on demand. |
+| `permission.asked {id, action, resources, save, metadata, source}` | `PermissionRequest {request_id: id, tool_call_id: source.id, tool: action, display_name: None, input: <the tool's input from MapState, else {resources, metadata}>, description: None, decision_reason: None, suggestions, by}` | `suggestions` in the existing shape (A4): for each `save` pattern `{"type":"addRules","rules":[{"toolName": <action>, "ruleContent": <pattern>}],"behavior":"allow","destination":"localSettings"}` (OpenCode's own per-project "always"), the same with `"destination":"session"` (a session ruleset entry), and for `edit` actions `{"type":"setMode","mode":"acceptEdits","destination":"session"}`. Phase 3 converts the chosen rule to `{action, resource, effect}`. `bash_rules` proposes prefixes for the shell kind (the table gives the tool name) when `save` has none. |
+| `permission.replied {requestID, reply}` | `PermissionResolved {request_id, resolution: once/always -> Allowed, reject -> Denied}` | Emitted also for siblings the server resolved itself. Idempotent. |
+| `form.created` (`metadata.kind == "question"`) | `QuestionRequest {request_id: form.id, tool_call_id: metadata.tool.id, questions, by}` | One `Question` per field: `question` = `description`, `header` = `title`, `options` = `{label, description}` (no `preview`), `multi_select` = a multiselect field. `custom: true` is the Other row. |
+| `form.replied {answer}` | `QuestionResolved {request_id, tool_call_id, resolution: Answered, answers}` | `answers` rebuilt from the pending form and the answer keys. A cancel is `Skipped`. |
+| `session.step.ended {tokens, cost}` | `Usage {scope: Message, input_tokens, output_tokens: output + reasoning, cache_read_tokens, cache_creation_tokens, cost_usd: cost, context_window: model.limit.context, model}` | Also adds to the turn baseline. |
+| `session.step.failed {error, tokens, cost}` | `Usage {scope: Message, ...}` | Tokens and cost of an interrupted or failed step count (confirmed present). Adds to the turn baseline. The error itself comes with `execution.*`. |
+| `session.execution.succeeded` | `Usage {scope: Turn, <the sum of the execution's steps>}` then `TurnFinished {reason: Completed, duration_ms, is_error: false}` | `duration_ms` from the transport's clock. Turn usage is never taken from `session.usage.updated` (A6). |
+| `session.execution.interrupted {reason}` | `Usage {scope: Turn, sums}` then `TurnFinished {reason: Interrupted}` | `user` after an interrupt call, `shutdown` after a rejected permission (4.3). |
+| `session.execution.failed {error}` | `Error {kind, message, retryable}`, `Usage {scope: Turn}`, `TurnFinished {reason: Error, is_error: true, errors}` | `provider.auth` -> `AgentErrorKind::Auth`, `provider.no-route` -> `Api` (not retryable), anything else -> `Api` / `Unknown`. |
+| `session.retry.scheduled` | `RateLimit` or `Error {retryable: true}` | Not captured: verify P2. |
+| `session.inbox.enqueued {inboxID, item}` | none | The send was acknowledged by the HTTP reply. A `synthetic` item with `metadata.source == "subagent"` feeds the sub-agent report. |
+| `session.inbox.delivered {inboxID}` | `MessageReceived {message_id}` | A queued item delivered mid-execution is the same event as Claude's queue echo (A9); for a steer it is the ack that stops the "not delivered" timer. |
+| `session.inbox.cancelled {inboxID}` | none | The unqueue answer. A cancel Writer did not make (stop with queued items) -> `SteerUndelivered {message_id}`. |
+| `session.created {parentID}` + `session.tool.progress {metadata.sessionID}` | `SubagentStarted {tool_call_id: launch call, role: from agent name, name: agent, model}` | Role from `writer-<id>` through the shared role table; a user agent has `role: None`. |
+| child `session.step.started` (first block of a message) | `SubagentMessage {message_id: assistantMessageID, parent_tool_call_id}` | Before the message's first block, as for Claude. |
+| child `session.step.started {model}` | `SubagentModel {tool_call_id, model}` | When first seen and when it changes. |
+| `experimental.job.updated {kind: "subagent", status}` | `SubagentStatus {tool_call_id, status: Running / Completed / Failed / Stopped, report}` | `report` = the text inside `<background-result>` of the synthetic inbox item. `sub_tracker.rs` decides the final state as today. |
+| `session.renamed {title}` | none | Ignored (A5); the event does not occur with `agents.title.disabled`. |
+| `session.model.selected`, `session.agent.selected`, `session.permissions` | none | Echoes of Writer's own calls. |
+| `session.usage.updated`, `session.instructions.updated`, `session.step.first-token`, `session.step.streamed`, `shell.created`, `experimental.job.updated {kind:"shell"}`, `mcp.status.changed`, `plugin.updated`, `config.updated`, `provider.updated`, `model.updated`, `project.updated`, `session.skill.activated`, `session.synthetic`, `session.compaction.*` | none | `mcp.status.changed` refreshes the skills chip (MCP health) through `GET /api/mcp`; `model.updated` refreshes the model list. |
+| Writer-originated | `ModelRefused`, `SessionReloaded`, `TurnChanges`, `SessionChanges`, `SessionEnded` | Produced by the `Session`, never by the mapper. |
+
+No row needed a new variant or field. Goldens (phase 2) cover every fixture, and `interrupt` and `shell-reject` pin the failed-step usage and the interrupted turn.
+
+## 7. Tool name to neutral kind
+
+One table per backend. Columns: backend tool name, kind, argument names for the kinds the core reads. Claude's table is today's `EDIT_TOOLS`, `SHELL_TOOL`, `LAUNCH_TOOLS`, `SUBAGENT_TYPE_KEY`, `bash_rules`' tool name, the `writer_prompt.rs` names and `tool-kinds.ts` (reproduced exactly); OpenCode's:
+
+| OpenCode tool | Kind | Arguments (confirmed unless marked) | Permission action |
+| --- | --- | --- | --- |
+| `edit` | `edit` | `path` (relative to the session cwd), `oldString`, `newString`, `replaceAll` | `edit` |
+| `write` | `write` | not captured (expected `path`, `content`) | verify P2 |
+| `apply_patch` | `edit` (multi-file) | not captured | verify P2 |
+| `shell` | `shell` | `command` | `shell` |
+| `read` | `read` | `path` | `read` |
+| `glob`, `grep` | `search` | not captured | verify P2 |
+| `subagent` | `subagent` | `agent` (the agent type), `description`, `prompt` | none observed |
+| `webfetch`, `websearch` | `web` | not captured | verify P2 |
+| `question` | `question` | `questions[]` | none (a form is raised) |
+| `todowrite` | `todo` | not captured (Writer has no todo card: shown as `Used N tools`) | verify P2 |
+| `skill` | `skill` | not captured | verify P2 |
+| `execute` (codemode) | `code` | `code`; inner calls from `metadata.toolCalls` (6) | none for `execute`; per inner call `<server>_<tool>` |
+| `<server>_<tool>` (inner call, or a direct call with `codemode:false`) | `mcp` (`writer_*` read tools shown as searches or reads, as `mcp__writer__*` are) | the tool's own | `<server>_<tool>` |
+
+Names of tools not captured come from the binary's string table and the OpenAPI, not from a run: phase 2 captures each (one prompt each, free model) before the table is trusted. The kind set is the ADR's (`edit`, `write`, `shell`, `read`, `search`, `subagent`, `web`, `mcp`) plus `question`, `todo`, `skill` and `code`; the first three are what Claude's table also needs to name (`AskUserQuestion`, `TodoWrite`, `Skill`), only `code` is new.
+
+## 8. Writer's config file and permission modes
+
+`<app data>/opencode/<vault id>.json`, written atomically 0600 by one builder from the role registry, the tools adapter and the permission mode; never in the vault, never `opencode.json`. The server runs with the Writer-owned empty `XDG_CONFIG_HOME` (U1). Shape (accepted by 2.4.0):
+
+```json
+{
+  "permissions": [
+    { "action": "*", "resource": "*", "effect": "ask" },
+    { "action": "read", "resource": "*", "effect": "allow" },
+    { "action": "glob", "resource": "*", "effect": "allow" },
+    { "action": "grep", "resource": "*", "effect": "allow" },
+    { "action": "question", "resource": "*", "effect": "allow" },
+    { "action": "subagent", "resource": "*", "effect": "allow" },
+    { "action": "writer_search", "resource": "*", "effect": "allow" }
+  ],
+  "agents": {
+    "title": { "disabled": true },
+    "writer-explorer": {
+      "mode": "subagent",
+      "description": "<role purpose>",
+      "system": "<role prompt>",
+      "model": "<provider/model from agent.opencode.model-cheap>",
+      "permissions": [ "<the same mode ruleset, then { action: edit, resource: *, effect: deny } for a read-only role>" ]
+    },
+    "writer-worker": { "mode": "subagent", "description": "...", "system": "...", "model": "...", "permissions": [ "<the mode ruleset>" ] }
+  },
+  "mcp": {
+    "servers": {
+      "writer": { "type": "local", "command": ["<writer launcher>", "vault=<root>", "mcp"] }
+    }
+  }
+}
+```
+
+**Every mode is an allowlist (A1).** The ruleset is the base rule, then the allows from the one tools adapter, then the denies of `agent.disallowed-tools`; last match wins; it is never empty. The base rule is `ask` in every mode except `dontAsk` (`deny`). The read allows are the same in every mode: `read`, `glob`, `grep`, `question`, `subagent`, `skill`, `todowrite` and the `writer_<tool>` read tools of the tools adapter; `execute` needs no rule (only its inner calls are checked).
+
+| Mode | Beyond the base and the read allows |
+| --- | --- |
+| `manual` | nothing: asks for every mutating action: `edit`, `write`, `apply_patch`, `shell`, `webfetch`, `websearch` and MCP write tools |
+| `acceptEdits` | allow `edit`, `write`, `apply_patch` |
+| `plan` | the manual ruleset, and the session's agent is switched to `plan` (denies `edit`) |
+| `auto` (A1) | `acceptEdits` plus `webfetch` and `websearch` allowed (read tools); `shell` and MCP write tools still ask. Never a bypass |
+| `dontAsk` | base `deny`; only the allows (including `agent.allowed-tools`) pass |
+
+- The mode is also set per session (`permissions` at create, `PATCH /api/session/{id}` to switch live, replace semantics, so the full ruleset is sent), and per agent in the file; a mode switch applies to sub-agents at the next idle `POST /api/location/reload` (children launched earlier keep the mode they started under; a chat-scoped "always" is re-applied by PATCH on `session.created{parentID}`, 4.5).
+- `agent.allowed-tools` / `agent.disallowed-tools` become `{action, resource, effect}` entries; MCP actions are `<server>_<tool>`; shell prefixes `{action:"shell", resource:"<prefix> *", effect:"allow"}`.
+- Never in the file: provider keys, passwords, tokens; the password goes in the environment.
+- Not used: `instructions`, `skills`, `commands`, `plugins`, `providers`, `policies`, `experimental`. `codemode` is left at its default (on) for `writer`.
+- Writer's system block and the memory are per chat: `PUT .../instructions/entries/writer {value}` after the session is created (and again when it changes), not in the file.
+- A change to Writer's part rewrites the file; MCP applies at runtime (`PUT /api/experimental/mcp/writer {config}`); permissions apply per session (`PATCH`); role changes (`agents`) need `POST /api/location/reload` or a restart at an idle moment (not exercised: verify P3).
+- **Test (phase 3):** the builder's JSON is pinned per mode in a golden; a test asserts every mode starts with the base rule, no mode has empty permissions, `auto` differs from `manual` and `acceptEdits` and contains no `shell` allow, and `title` is disabled.
+
+## 9. Parity with the Claude backend
+
+Rows follow `claude-agent-feature-inventory.md` (the lead's inventory of the Claude pane, 2026-11-23), grouped as it is. Status: **same** (the OpenCode mechanism gives the identical behaviour), **mapped** (neutral feature, different mechanism), **mapped, differs** (neutral feature, a visible difference), **Writer-side** (Writer does it the same way for both backends), **gap**. "verify P<n>" says the mechanism was not captured. Phases are those of section 11.
+
+### 9.1 Chat lifecycle
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| New chat, last-used project | Writer-side; backend chosen per chat (`writer-chat-backend`) | Writer-side | 4 |
+| Lazy start, chat id = session id | `POST /api/session` on the first send (A7), its id is the session id | mapped | 2 |
+| Chat tabs, open from history (rebuilt from the note) | Writer-side | Writer-side | 2 |
+| Resume | the session persists in OpenCode's database; send to its id | mapped | 2 |
+| Session missing: seeded replay of the note | `GET /api/session/{id}` 404 `SessionNotFoundError` (confirmed), then a new session with the same seeding | mapped | 2 |
+| Restore open chats on relaunch | Writer-side | Writer-side | 2 |
+| Close with a turn running (ask to stop) | Writer-side, then `interrupt` | Writer-side | 2 |
+| A background child running when the window closes or the server stops shows Interrupted when reopened | the server stop kills the child; the restored chat's `sub_tracker` marks a run that never reported as Interrupted, as for Claude | same (Writer-side) | 2 |
+| Process limits: 1 to 8 chats, idle reap 30 min | one server for all chats; the cap applies to concurrent runs; reaping closes nothing (a session is a row, not a process) and the server stays until window close | mapped | 2 |
+| Chat notes, git commit as `agent(chat): <title>` | Writer-side | Writer-side | 2 |
+| Deleting a chat | `DELETE /api/session/{id}` (U2); archiving keeps the session | mapped | 2 |
+| Auto titles | the one trigger in `title.rs`; the generator is `POST /api/session/{id}/generate` (A5); OpenCode's own title agent is disabled in the file | mapped | 2 |
+| Regenerate title (`/regenerate-title`) | the same generator, same path | same | 2 |
+| History row actions, History view, clean-up | Writer-side (notes) | Writer-side | 2 |
+| Projects (all sub-items) | Writer-side; only the cwd and context header reach the backend | Writer-side | 2 |
+
+### 9.2 Composer
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Editing, shortcuts | Writer-side | Writer-side | none |
+| Model chip: live switch, model in use, set default | `POST .../model`; `step.started.model`; list from `GET /api/model` filtered by `agent.opencode.disabled-models` and `enabled`/`status` | mapped | 4 |
+| Model the org restricts reverts the chip | `provider.no-route` / `provider.auth` on the next prompt -> the chip reverts (the failure comes at send, not at switch) | mapped | 4 |
+| Effort (default, low .. max) | the model's `variant` (`POST .../model {variant}`); ids are per model (`low..max`, `none/high`), so the chip lists `variants` from `GET /api/model`; live, no restart. Claude's six fixed levels do not all exist | mapped | 4 |
+| Permission-mode chip, live switch | `PATCH /api/session/{id} {permissions}` and `POST .../agent {agent:"plan"}`; no respawn | mapped | 3 |
+| Attachments: images | `prompt.files[]`, inline `data:` URI + `name` (confirmed); limits are OpenCode's | mapped | 2 |
+| Attachments: PDFs | `files[]` with a `file://` URI (a PDF was not captured; models without a PDF input cannot read it) | mapped (verify P2) | 2 |
+| Attachments: other files, @ chips for vault files, thumbnails | Writer-side copy into `assets/`; vault files as `files[]` | Writer-side | 2 |
+| @-mentions | each mention is a `files[]` item (`file://<abs path>`, `mention {start,end,text}`): the server inlines the content (confirmed). A bare `@path` in text is not resolved. Folders: verify P2, fall back to the `<references>` footer | mapped | 2 |
+| `<references>` and `<open-tabs>` footers, active note chip | Writer-side text in the prompt | Writer-side | 2 |
+| Slash menu: Writer commands first | Writer-side | Writer-side | none |
+| Slash menu: skills and CLI commands, skills chip | `GET /api/skill` and `GET /api/command`, plus Writer's disk scan of `.agents/skills` and `.claude/skills`; invocation `prompt.skills[]`. Which skill folders the server loads from the vault (`OPENCODE_DISABLE_CLAUDE_CODE=1` turns the Claude ones off): verify P2 | mapped (verify P2) | 2 |
+| Steer (Cmd+Enter, cuts the running step) | steer prompt then `interrupt?resume=true`; the plain steer waits for the step boundary (4.6) | mapped (verify P2) | 2 |
+| Steer not acknowledged in 30 s -> "not delivered", Retry | `inbox.delivered` is the ack; the timer is the `Session`'s | same | 2 |
+| Queue: chip, merge of quick Enters, cancel, send now | `delivery:"queue"`; cancel `DELETE .../inbox/{id}` awaiting the outcome; send now `PATCH ... {delivery:"steer"}`; merge = cancel then re-send | mapped | 2 |
+| Queued messages survive a restart, re-sent once | Writer-side record plus the inbox check of A8 (exactly one delivery) | mapped | 2 |
+| Stop, "Stopping" | `POST .../interrupt` then `execution.interrupted`; no 5 s kill | mapped | 2 |
+| Send button becomes "Queue message" | Writer-side | Writer-side | none |
+
+### 9.3 Streaming display
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Text streaming, Markdown, copy | `session.text.delta` / `.ended` | same | 2 |
+| Thinking row, "Thought for Ns", not saved | `session.reasoning.*` (the model's reasoning field, not a summary; some models emit none); Writer times it; `agent.show-thinking` unchanged | same | 2 |
+| Timeline groups, tool rows, status icons | tool-table kinds (7); a codemode `execute` shows its inner rows (6) | mapped | 2 |
+| Output caps (64 KiB, 2000 lines) | Writer-side; OpenCode also truncates (`metadata.truncated`) | Writer-side | 2 |
+| Turn footer: requests, output tokens, cost | `step.ended` and `step.failed` (requests = steps), `tokens`, `cost` (0 on free models); turn = their sum (A6) | mapped | 2 |
+| Stop reasons Stopped, turn limit, budget | `execution.interrupted`; turn limit = agent `steps` (verify P2); no budget | mapped (limit: verify) | 2 |
+| Errors: card per kind, rate-limit card | `execution.failed {error.type}`: `provider.auth`, `provider.no-route`; `session.retry.scheduled` (verify P2) | mapped | 2 |
+| Todo and plan cards | not built | same | none |
+
+### 9.4 Permissions
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Card: one at a time, "+N more", body, preview up to 200 lines | `permission.asked` -> `PermissionRequest`; the preview uses the tool input from `tool.called`, or the ready patch in `metadata.files[]` | same | 2 |
+| Buttons Allow once / Always / Deny | `once` / `always` / `reject`; Deny with a reason: `reply.message` (verify P2). A reject ends the whole turn (4.3), Claude's Deny does not | mapped, differs (the card says "stops this turn") | 2 |
+| Always-allow options: this project, this chat, auto-edit this chat | the suggestion shape of A4: `addRules` with destination `localSettings` = OpenCode's `always` + `save` pattern (per project, in OpenCode's DB), `session` = a session ruleset entry through `PATCH`, `setMode acceptEdits` = `edit allow` in the same call | mapped | 3 |
+| Writer's Bash prefix rule chips, "This exact command" | `bash_rules` keyed on the shell kind, taking the backend's tool name (`shell`); the chosen rule becomes `{action:"shell", resource:"<prefix> *", effect:"allow"}`; dangerous constructs refused as today | mapped | 1, 3 |
+| Where rules live, saved-rules list, Remove | OpenCode's saved rules: `GET /api/permission/saved`, `DELETE .../{id}`; the Settings list reads them (only for Writer's vault project) | mapped | 4 |
+| Stale cards cancelled after an interrupt | `PermissionResolved{Cancelled}` by the transport on `execution.interrupted` | same | 2 |
+| Defaults: read-only writer commands, reads in the vault | the mode rulesets of 8 (allowlists, base `ask`) | mapped | 3 |
+| Sub-agent cards "asked by worker" | `permission.asked.sessionID` = child; `by` from the child's agent | same | 2 |
+
+### 9.5 Questions
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Card, tabs, options with descriptions, Other row, keys, Submit and Skip | `form.created` (`kind: question`) fields: one per question, `options`, `custom: true`; answer `{q0: label}` | same | 2 |
+| Multi-select checkboxes | the form's multiselect field | mapped (verify P2) | 2 |
+| Option previews | OpenCode options have no `preview` | gap (absent, not an error) | none |
+| Answered / Skipped / Not answered, persisted | `form.replied`; skip `DELETE ... ?message=` | mapped | 2 |
+| Skip sends "The user skipped the questions." | the `message` of the cancel (the agent receives it: verify P2) | mapped (verify P2) | 2 |
+| Busy state while a question is open | the turn stays open (no `execution.*` until the answer) | same | 2 |
+
+### 9.6 Sub-agents
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Roles explorer (cheap, read-only) and worker (standard, edits); model per tier | `agents.writer-<id>` in the file (`mode: subagent`, `system`, `model`, `permissions`), models from `agent.opencode.model-cheap/-standard/-strong` | mapped | 3 |
+| Launch card at the launch call | tool `subagent {agent, description, prompt}` -> `SubagentStarted` (the table gives the launch kind and the agent-type argument name) | mapped | 1, 2 |
+| Card: role icon, real model, task, status, counts, report, steps | child `step.started.model`; `experimental.job.updated`; report in the synthetic `<background-result>`; child events routed with `parent_tool_call_id` after the link (A10) | mapped | 2 |
+| Tray above the composer | Writer-side over `SubagentStatus` | Writer-side | 2 |
+| Background runs keep the turn open until notification | **OpenCode ends the parent's turn at once and wakes it on the result** (a new execution with no user message); Claude's foreground launch keeps the turn open | mapped, differs: the parent turn ends and the result wakes it | 2 |
+| Resume: send to a finished run, "Resumed" divider | not captured; candidate: `POST /api/session/{child}/prompt` to the child session | mapped (verify P2) | 2 |
+| Transcript line "Started <role>: <task>" | Writer-side | Writer-side | 2 |
+| Sub-agents never get memory | Writer-side (the memory block is an instruction entry of the main session only) | Writer-side | 3 |
+| Sub-agent edits join the Changes card with a "worker" label | child tool events carry `parent_tool_call_id`; same capture | same | 2 |
+
+### 9.7 Changes
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Changes card, Undo, snapshots, race settlement, markers, "before unknown" | Writer-side over the neutral `edit`/`write`/`shell` kinds and their argument names; pre-image read at `tool.called`/`permission.asked`; `edit_inverse.rs` unchanged; `GET .../diff` unused | same | 1, 2 |
+| Changed-notes row, Session changes tab | Writer-side | Writer-side | 2 |
+| Shell-command changes: watcher window and Git baseline | tool kind `shell`, `command_windows.rs` unchanged | same | 2 |
+| Exclusions (memory folder), persistence | Writer-side | Writer-side | none |
+
+### 9.8 Context
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Active note and project context | Writer-side text and `files[]` | Writer-side | 2 |
+| Instruction files (CLAUDE.md else AGENTS.md; Writer injects AGENTS.md when shadowed) | OpenCode reads AGENTS.md itself; `OPENCODE_DISABLE_CLAUDE_CODE=1` turns the CLAUDE.md fallback off, so Writer's injection covers CLAUDE.md-only projects (verify P2 which files the server loads) | mapped (verify P2) | 2 |
+| Writer system block, 3100-char budget | `PUT .../instructions/entries/writer {value}` (experimental; confirmed); applied at the next step boundary | mapped | 3 |
+| Writer MCP server `writer`, read tools auto-allowed, launcher first on PATH | `mcp.servers.writer` (codemode on), inner calls `writer_<cmd>`; read allows in the mode rulesets; the launcher dir prepended in the server's environment | mapped | 3 |
+| Managed skills `writer-cli`, `-search`, `-bases` | the same folders (`.agents/skills`); OpenCode loads `.agents/skills` (verify P2) | mapped (verify P2) | 3 |
+| Memory (vault, default, off) | **Writer-owned, one memory for both backends (U3):** the same `.writer/memory/` files; the index goes in the per-session instruction entry, writes go through Writer's MCP tools (a phase 3 task: Claude uses its CLI's own memory tool, so the MCP server needs memory read and write tools); OpenCode's own memory flag stays off; "default" and "off" keep their meaning for Writer's memory | mapped | 3 |
+| Search through writer MCP tools, Glob/Grep omitted from the prompt | the same MCP tools; OpenCode's `glob`/`grep` stay available | same | 3 |
+
+### 9.9 Usage
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Context ring: used = last call input + cache read + cache write; window | last `step.ended` tokens; window = `GET /api/model` `limit.context` of the model in use (present for every model). No `[1m]` rule | same | 2 |
+| Sub-agents don't move it | the mapper ignores child steps for the ring | same | 2 |
+| Turn footer, chat usage saved | per-step `Usage{Message}`; the turn is their sum (A6) | same | 2 |
+| Image estimate about 1600 tokens | Writer-side; OpenCode reports real input tokens | Writer-side | none |
+| Title calls not counted | the title generator's tokens go into the session totals, but the footer sums steps, not session totals | mapped | 2 |
+
+### 9.10 Config sync and auto-reload
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Reload session | not a restart: `POST /api/location/reload` and a fresh instruction entry; the session keeps its id | mapped (verify P3) | 3 |
+| Auto-reload: skills and instruction files watched | Writer's watcher unchanged; the action is a location reload; `.mcp.json` and `.claude/settings*.json` do not apply | mapped | 3 |
+| MCP health probe | `GET /api/mcp` and `mcp.status.changed` (no `claude mcp list` process) | mapped | 3 |
+
+### 9.11 Settings
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Backend pills | the `agent.backends` point entry becomes available | mapped | 4 |
+| Status card: Ready, Not found, Unsupported version, Could not check | binary detect + `GET /api/info` version `>= 2.4.0` | mapped | 4 |
+| Models: default model and effort, picker list, three tier models | `agent.opencode.model`, `.disabled-models`, `.model-cheap/-standard/-strong`; the list from `GET /api/model` (cost, capabilities, variants) | mapped | 4 |
+| Permission modes, allowed/disallowed editors | shared UI; mapping in 8 | mapped | 3, 4 |
+| Chats and context section, Memory section, Features switch | shared UI; Claude-specific settings stay under Claude | Writer-side | 4 |
+
+### 9.12 Shortcuts, palette, failure handling and other
+
+| Item | OpenCode mechanism | Status | Phase |
+| --- | --- | --- | --- |
+| Pane toggle, palette commands, composer key order | Writer-side | Writer-side | none |
+| Not installed: card with Choose binary and Install instructions | binary detect, same card | same | 4 |
+| Not signed in: auth card | `provider.auth` at send time (no probe); the card says "Connect a provider: opencode auth login" and runs nothing | mapped | 2 |
+| Process crash: resume, at most 2 respawns, "Connection lost" banner; session missing seeded | server exit or refused connection; restart on the next send; the resync of 4.10 and the receipts of A8 | mapped | 2 |
+| Error cards: spawn denied, rate limit, retryable API error, protocol error, timeout, unsupported version | the same `AgentErrorKind`s from spawn, `execution.failed`, parse failure or an unlinked child (A10), request timeout, the version check | mapped | 2 |
+| Steer not delivered, stop, idle reaping | see 9.2 and 9.1 | mapped | 2 |
+| Process cleanup on vault switch, window close, exit | `OpencodeServer` stop (5) | mapped | 2 |
+| Logs never contain content | same redaction; the password, `GET /api/provider` objects and MCP `failed` errors never logged raw | Writer-side | 2 |
+| Git commits `agent(...)` with chat, backend, model, `Writer-Model` trailer | Writer-side | Writer-side | none |
+| Drag from Finder/sidebar, empty state, no telemetry | Writer-side | Writer-side | none |
+
+### 9.13 Claude-only items, for OpenCode
+
+| Item | OpenCode |
+| --- | --- |
+| Auto-memory by the CLI's memory tool | Writer-owned memory for both backends (U3) |
+| CLAUDE.md over AGENTS.md audit | AGENTS.md is native for OpenCode; the injection is neutral |
+| Slash expansion only at message start, mid-message `/skill` hint | `prompt.skills[]` carries skills explicitly: no start-of-message rule |
+| `[1m]` suffix and known-windows table | not needed: `limit.context` is in `GET /api/model` |
+| Claude's background sub-agent runtime (`task_*`, `SendMessage`, `--agents`) | OpenCode's own (4.5); the tray and card are shared |
+| "Auto-edit files this chat" setMode suggestion | `edit allow` in a session `PATCH` (the `setMode` shape of A4) |
+| `~/.claude` home settings and `claude auth status` | none; OpenCode's login is the user's `opencode auth login`, never read |
+
+## 10. Risks and corrections to the ADR
+
+Risks, in order of weight:
+
+1. **A large user config can stall the first prompt of a location for minutes** (the spike's user config had about 30 MCP servers). Resolved by U1: the server runs with an empty Writer-owned config home and only Writer's file. The cost is that the user's own OpenCode agents, MCP servers and rules do not show up in Writer's OpenCode chats; the Settings page should say so in one line.
+2. **`/api/event` is the only live feed and replay does not exist** (4.10): deltas dropped during a stall are recovered only from `GET .../message`.
+3. **Privacy in provider and config responses** (4.8): `GET /api/provider` carries an org id in `headers` and per-provider `settings`; `GET /api/config` returns config documents; MCP `failed` errors carry stderr. Typed client structs name only the fields Writer uses; raw bodies are never logged or forwarded; `/api/credential` stays untouched.
+4. **Sessions and rules persist in the user's OpenCode data** (`<data>/opencode`): chats show up in the user's other OpenCode clients, `always` saves rules there, and every shell run leaves an output file there that no API removes. Deleting a Writer chat deletes its session (U2); Settings says once that OpenCode keeps its own copy.
+5. **Reject ends the turn** (4.3), unlike Claude's Deny; the card says so.
+6. **Model list races** the server start (4.9).
+7. **Experimental routes:** `PUT /api/experimental/mcp/*` and `.../instructions/entries/*` worked; both are pinned by the contract test and the version check. If either changes, MCP falls back to a config rewrite plus `POST /api/location/reload` and the system block to `agents.<n>.system`.
+8. **Codemode** hides MCP calls inside an `execute` call (U4): the mapper depends on `metadata.toolCalls`, whose shape for failed or denied inner calls is unverified; a change there breaks the rows, caught by the golden.
+9. **Sub-agent permission inheritance and precedence are unverified** (4.5); the design (A2) does not depend on them.
+10. **Tool arguments of `write`, `glob`, `grep`, `webfetch`, `websearch`, `apply_patch`, `todowrite`, `skill` are unverified**; `/diff` is unused.
+11. **SIGTERM shutdown** can take about 10 s.
+12. **Clean-room and license:** OpenCode is MIT; the spike read the OpenAPI, ran the binary and listed tool names from its strings; no source was copied.
+
+Where the ADR's assumptions turned out wrong or incomplete (for the amendment, section "Amended 2026-11-23" of the ADR):
+
+- Resync from the replayable log: it never replays on 2.4.0 (only a `log.synced` marker). Resync is `GET .../message` plus `inbox`, `permission`, `form`.
+- `session.execution.*` is the turn's start and end, but a **queued** prompt is delivered inside the running execution; it is a `MessageReceived`, not a turn boundary.
+- `session.created` with a `parentID` does not name the launching tool call; the link is `session.tool.progress.metadata.sessionID`. Sub-agents are **background by default**: the parent's turn ends first and OpenCode wakes it with a synthetic `<background-result>` item.
+- Tool names `writer_<tool>` are inner calls of an `execute` call under the default codemode, which Writer keeps (U4); the mapper shows the inner calls.
+- The shell permission action is `shell`, not `bash`; `edit` carries a unified patch in `permission.asked`; `always` stores a rule in OpenCode's database per project and also resolves sibling requests; `reject` ends the turn (reason `shutdown`).
+- The first `GET /api/model` can be empty; `cost` is an array of tiers.
+- Cold start was 1 to 2 s to `server listening`, not about 6 s.
+- The user's global config is not applied (U1), because a large one stalled the first prompt; logins still apply.
+- Per-session instructions, permissions at create and `PATCH /api/session/{id}` (replace) are confirmed; `POST .../model` carries the effort variant.
+- `session.step.streamed` only marks the end of streaming for a step; `session.idle` and `session.status` do not exist.
+- Not in the ADR: OpenCode titles sessions itself (`session.renamed`, switched off by `agents.title.disabled`), `POST .../generate` is the title generator; `DELETE .../form/{id}?message=` is Skip; `DELETE`/`PATCH .../inbox/{id}` give unqueue and send-now natively; the OpenAPI route is `/openapi.json`; the 401 behaviour is observed live.
+- The ADR's affected paths: OpenCode code, contract and fixtures are under `apps/desktop/features/opencode/` (A3), not `agent/opencode_events.rs` or `shared/opencode/`.
+
+## 11. Phases
+
+Matches the ADR's plan; each phase is validated and reviewed before the next.
+
+0. **Spike, fixtures and tools (this document).** Done: `features/opencode/fixtures/` (29 scrubbed files, README), `fixtures/tools/` (recorder, scrubber, contract refresh), `features/opencode/contract/openapi-2.4.0.json`, this spec, the ADR amendment.
+1. **`Transport` seam and neutral names.** Split `runner.rs` into `Session` plus `Transport` (section 5); Claude's child becomes `StdioTransport`. The per-backend tool-kind tables replace every Claude name in shared code: `changes.rs` and `edit_inverse.rs` (edit and shell tool sets), `subagents.rs` (`LAUNCH_TOOLS`, `SUBAGENT_TYPE_KEY`: the launch kind and the agent-type argument name come from the table), `sub_tracker.rs` (a neutral task signal in `events.rs`, no `claude_stream::TaskSignal` import), `bash_rules.rs` (keyed on the shell kind, taking the backend's tool name), `writer_prompt.rs` (the orchestration text's tool names from the backend's table) and `tool-kinds.ts`. Claude's table is byte-identical to today's names. **Boundary test:** no Claude tool-name literal (`Bash`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, `Agent`, `Task`, `AskUserQuestion`, `SendMessage`, `TodoWrite`, `mcp__writer__`) in `agent/` outside the Claude table, `claude_stream.rs` and `ClaudeAdapter`. No behaviour change: Claude goldens and fixtures unchanged.
+2. **The `opencode` feature's transport and mapper** (`features/opencode/rust/`): `opencode_api.rs` (wire types + the contract test against `contract/openapi-2.4.0.json`), `OpencodeServer`, `OpencodeTransport`, `opencode_events.rs` with goldens from `fixtures/` (every fixture; `interrupt` and `shell-reject` pin the failed-step usage and the interrupted turn), the fake OpenCode server (HTTP + SSE replaying `fixtures/` and `rest.json`). Tests: send; steer and queue; unqueue awaiting the outcome; interrupt; permission once/always/reject; question and skip; sub-agent routing with the link, an unlinked child as a protocol error; codemode inner rows; resync from messages; crash and restart with exactly one delivery (A8); version refused; 401 without the password; feature off (no process); **fixtures test:** a cargo test over `fixtures/` fails on any id not matching `*_fake*` (`ses_`, `msg_`, `evt_`, `per_`, `frm_`, `psv_`, `sh_`, `mcp_`, `call-`, 40-hex, 64-hex), including inside base64 values (the same rule as the tools' final check); **import-graph test:** `agent/` and `features/agent/` never name or import `opencode` (allowlist: the `backends.ts` "coming soon" entry until phase 4). First capture the "verify P2" items (a free model, one prompt each):
+   - the tools: `write`, `glob`, `grep`, `webfetch`, `websearch`, `apply_patch`, `todowrite`, `skill`;
+   - a multi-select question and a skipped question (does the agent receive the `message`);
+   - a child's edit under `ask`: its permission card, **inheritance of the session-level ruleset by a child, and config against session precedence**;
+   - a failed sub-agent and a resumed one;
+   - `interrupt?resume=true` and "steer now";
+   - `session.retry.scheduled`;
+   - `reply.message` of a reject, and whether a reject **rejects every pending request** of the session;
+   - how a failed or denied inner call shows in `metadata.toolCalls`;
+   - a duplicate and a client-chosen prompt `id` (idempotence and ordering);
+   - PDF and folder attachments;
+   - which instruction and skill folders the server loads from the vault;
+   - `agents.<n>.permissions` and `POST /api/location/reload` for role changes, `generate`'s cost on a paid model (title generator: fall back to a throwaway session on the cheap tier if it is too dear).
+3. **Adapters and config.** `OpencodeAdapter` (`RoleAdapter`, `ToolsAdapter`), the config builder (section 8) with the per-mode golden and its test, permission modes as rulesets, sub-agent modes per agent and the child re-apply, the instruction entry for the Writer block, Writer-owned memory (read into the prompt, written through Writer's MCP tools: add the memory tools to `writer mcp`), the suggestion conversion to `{action, resource, effect}`, location reload.
+4. **Feature, settings, models table.** The `opencode` feature and the `agent.backends` point, the new-chat backend picker, Settings > Agent > OpenCode (status, models table with tabs and costs, tier models, saved permission rules), variants in the model chip, the title generator wiring, the "your own OpenCode config does not apply" line.
+5. **Docs.** `native-agent-spec.md` section 9 pointer (done), `CHANGELOG.md`, the user docs.

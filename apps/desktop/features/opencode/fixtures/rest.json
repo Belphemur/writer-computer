@@ -1,0 +1,4570 @@
+{
+ "info": {
+  "method": "GET",
+  "path": "/api/info",
+  "status": 200,
+  "body": {
+   "version": "2.4.0",
+   "pid": 1,
+   "hostname": "fake-host",
+   "urls": [
+    "http://127.0.0.1:0"
+   ],
+   "paths": {
+    "tmp": "/tmp/opencode"
+   },
+   "capabilities": {
+    "persistentPty": true
+   }
+  }
+ },
+ "mcp": {
+  "method": "GET",
+  "path": "/api/mcp",
+  "status": 200,
+  "body": {
+   "location": {
+    "directory": "/vault"
+   },
+   "data": [
+    {
+     "name": "opencode_console",
+     "status": {
+      "status": "needs_auth",
+      "error": "Unauthorized"
+     },
+     "integrationID": "mcp_fake0001"
+    },
+    {
+     "name": "writer",
+     "status": {
+      "status": "connected"
+     }
+    }
+   ]
+  }
+ },
+ "session-create": {
+  "method": "POST",
+  "path": "/api/session",
+  "status": 200,
+  "body": {
+   "data": {
+    "id": "ses_fake0001",
+    "projectID": "prj_fake0001",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "cost": 0,
+    "tokens": {
+     "input": 0,
+     "output": 0,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    },
+    "time": {
+     "created": 1795490409318,
+     "updated": 1795490409318
+    },
+    "location": {
+     "directory": "/vault"
+    }
+   }
+  },
+  "request": {
+   "location": {
+    "directory": "/vault"
+   },
+   "model": {
+    "id": "beam-free",
+    "providerID": "opencode"
+   }
+  }
+ },
+ "prompt-admitted": {
+  "method": "POST",
+  "path": "/api/session/ses_fake0001/prompt",
+  "status": 200,
+  "body": {
+   "data": {
+    "id": "msg_fake0001",
+    "sessionID": "ses_fake0001",
+    "time": {
+     "created": 1795490409327
+    },
+    "type": "user",
+    "payload": {
+     "text": "hi"
+    },
+    "delivery": "steer"
+   }
+  },
+  "request": {
+   "text": "hi",
+   "resume": false
+  }
+ },
+ "interrupt-idle": {
+  "method": "POST",
+  "path": "/api/session/ses_fake0001/interrupt",
+  "status": 200,
+  "body": {
+   "interrupted": false
+  }
+ },
+ "permission-reply-404": {
+  "method": "POST",
+  "path": "/api/session/ses_fake0001/permission/per_fake0001/reply",
+  "status": 404,
+  "body": {
+   "_tag": "PermissionNotFoundError",
+   "requestID": "per_fake0001",
+   "message": "Permission request not found: per_fake0001"
+  },
+  "request": {
+   "decision": "once"
+  }
+ },
+ "form-reply-404": {
+  "method": "POST",
+  "path": "/api/session/ses_fake0001/form/frm_fake0001/reply",
+  "status": 404,
+  "body": {
+   "_tag": "FormNotFoundError",
+   "id": "frm_fake0001",
+   "message": "Form not found: frm_fake0001"
+  },
+  "request": {
+   "answer": {
+    "q0": "x"
+   }
+  }
+ },
+ "mcp-put-400": {
+  "method": "PUT",
+  "path": "/api/experimental/mcp/other",
+  "status": 400,
+  "body": {
+   "_tag": "InvalidRequestError",
+   "message": "Missing key\n  at [\"config\"]",
+   "kind": "Payload"
+  },
+  "request": {
+   "type": "local",
+   "command": [
+    "/opt/homebrew/bin/node",
+    "/home/user/repos/writer-computer/.claude/worktrees/opencode-spike/apps/desktop/features/opencode/fixtures/tools/mcp_server.cjs"
+   ]
+  }
+ },
+ "mcp-put-204": {
+  "method": "PUT",
+  "path": "/api/experimental/mcp/other",
+  "status": 204,
+  "body": null,
+  "request": {
+   "config": {
+    "type": "local",
+    "command": [
+     "/opt/homebrew/bin/node",
+     "/home/user/repos/writer-computer/.claude/worktrees/opencode-spike/apps/desktop/features/opencode/fixtures/tools/mcp_server.cjs"
+    ]
+   }
+  }
+ },
+ "mcp-delete-204": {
+  "method": "DELETE",
+  "path": "/api/experimental/mcp/other",
+  "status": 204,
+  "body": null
+ },
+ "session-get-404": {
+  "method": "GET",
+  "path": "/api/session/ses_fake0002",
+  "status": 404,
+  "body": {
+   "_tag": "SessionNotFoundError",
+   "sessionID": "ses_fake0002",
+   "message": "Session not found: ses_fake0002"
+  }
+ },
+ "provider": {
+  "method": "GET",
+  "path": "/api/provider",
+  "status": 200,
+  "body": {
+   "data": [
+    {
+     "id": "opencode",
+     "name": "Default / OpenCode",
+     "activation": "enabled"
+    }
+   ]
+  }
+ },
+ "models": {
+  "method": "GET",
+  "path": "/api/model",
+  "status": 200,
+  "body": {
+   "data": [
+    {
+     "id": "tidepool-alpha-free",
+     "modelID": "tidepool-alpha-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "name": "Tidepool Alpha Free",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "minimal",
+       "settings": {
+        "reasoningEffort": "minimal"
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1794960000000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 131072
+     }
+    },
+    {
+     "id": "gemini-4-neon",
+     "modelID": "gemini-4-neon",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gemini",
+     "name": "Gemini 4 Neon",
+     "package": "\u0040opencode/ai/providers/google",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/google/v1beta"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "audio",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "low"
+        }
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "medium"
+        }
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "high"
+        }
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "xhigh"
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1794960000000
+     },
+     "cost": [
+      {
+       "input": 3,
+       "output": 15,
+       "cache": {
+        "read": 0.15,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 65536
+     }
+    },
+    {
+     "id": "gpt-6.2-sol",
+     "modelID": "gpt-6.2-sol",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-sol",
+     "name": "GPT-6.2 Sol",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1794873600000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 10,
+       "cache": {
+        "read": 0.1,
+        "write": 2.5
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 4,
+       "output": 15,
+       "cache": {
+        "read": 0.2,
+        "write": 5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "gpt-6.2-astra",
+     "modelID": "gpt-6.2-astra",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-astra",
+     "name": "GPT-6.2 Astra",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1794873600000
+     },
+     "cost": [
+      {
+       "input": 8,
+       "output": 40,
+       "cache": {
+        "read": 0.4,
+        "write": 10
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 16,
+       "output": 60,
+       "cache": {
+        "read": 0.8,
+        "write": 20
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "hy4-flash-free",
+     "modelID": "hy4-flash-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "hy-flash-free",
+     "name": "Hy4 flash Free",
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      }
+     ],
+     "time": {
+      "released": 1794787200000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "input": 983040,
+      "output": 65536
+     }
+    },
+    {
+     "id": "gemini-4-hydrogen",
+     "modelID": "gemini-4-hydrogen",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gemini",
+     "name": "Gemini 4 Hydrogen",
+     "package": "\u0040opencode/ai/providers/google",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/google/v1beta"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "audio",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "low"
+        }
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "medium"
+        }
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "high"
+        }
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "xhigh"
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1794441600000
+     },
+     "cost": [
+      {
+       "input": 1.5,
+       "output": 7.5,
+       "cache": {
+        "read": 0.075,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 65536
+     }
+    },
+    {
+     "id": "gemini-4-carbon",
+     "modelID": "gemini-4-carbon",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gemini",
+     "name": "Gemini 4 Carbon",
+     "package": "\u0040opencode/ai/providers/google",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/google/v1beta"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "audio",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "low"
+        }
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "medium"
+        }
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "high"
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1794268800000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 10,
+       "cache": {
+        "read": 0.1,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 65536
+     }
+    },
+    {
+     "id": "claude-fable-5-2",
+     "modelID": "claude-fable-5-2",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "claude-fable",
+     "name": "Claude Fable 5.2",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1794182400000
+     },
+     "cost": [
+      {
+       "input": 8,
+       "output": 40,
+       "cache": {
+        "read": 0.2,
+        "write": 10
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "muse-ember-1.0",
+     "modelID": "muse-ember-1.0",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "muse-ember",
+     "name": "Muse Ember 1.0",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "minimal",
+       "settings": {
+        "reasoningEffort": "minimal",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1794182400000
+     },
+     "cost": [
+      {
+       "input": 0.1,
+       "output": 0.5,
+       "cache": {
+        "read": 0.004,
+        "write": 0
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 200000
+       },
+       "input": 0.3,
+       "output": 1.5,
+       "cache": {
+        "read": 0.012,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 270000
+     }
+    },
+    {
+     "id": "iceman-free",
+     "modelID": "iceman-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "name": "Iceman Free",
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ]
+     },
+     "variants": [],
+     "time": {
+      "released": 1793923200000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 262144,
+      "output": 131072
+     }
+    },
+    {
+     "id": "flint-40b-free",
+     "modelID": "flint-40b-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "flint-free",
+     "name": "Flint 40B Free",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1792540800000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 262144,
+      "output": 65536
+     }
+    },
+    {
+     "id": "deepseek-v4.1-flash-free",
+     "modelID": "deepseek-v4.1-flash-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "deepseek-flash-free",
+     "name": "DeepSeek V4.1 Flash Free",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1792195200000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 200000,
+      "output": 32000
+     }
+    },
+    {
+     "id": "deepseek-v4.1-flash",
+     "modelID": "deepseek-v4.1-flash",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "deepseek-flash",
+     "name": "DeepSeek V4.1 Flash 1017",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1792195200000
+     },
+     "cost": [
+      {
+       "input": 0.12,
+       "output": 0.48,
+       "cache": {
+        "read": 0.0024,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 384000
+     }
+    },
+    {
+     "id": "nemotron-3.5-super-vl-free",
+     "modelID": "nemotron-3.5-super-vl-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "nemotron-super-free",
+     "name": "Nemotron 3.5 Super VL Free",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none"
+       }
+      },
+      {
+       "id": "minimal",
+       "settings": {
+        "reasoningEffort": "minimal"
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh"
+       }
+      }
+     ],
+     "time": {
+      "released": 1792022400000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "input": 1048576,
+      "output": 131072
+     }
+    },
+    {
+     "id": "gemini-4-argon",
+     "modelID": "gemini-4-argon",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gemini",
+     "name": "Gemini 4 Argon",
+     "package": "\u0040opencode/ai/providers/google",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/google/v1beta"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "audio",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "low"
+        }
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "medium"
+        }
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "high"
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1791849600000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 10,
+       "cache": {
+        "read": 0.1,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 65536
+     }
+    },
+    {
+     "id": "muse-wonder-1.0",
+     "modelID": "muse-wonder-1.0",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "muse-wonder",
+     "name": "Muse Wonder",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "pdf",
+       "audio"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "minimal",
+       "settings": {
+        "reasoningEffort": "minimal",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1791763200000
+     },
+     "cost": [
+      {
+       "input": 4,
+       "output": 20,
+       "cache": {
+        "read": 0.2,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 131072
+     }
+    },
+    {
+     "id": "claude-haiku-5-5",
+     "modelID": "claude-haiku-5-5",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "claude-haiku",
+     "name": "Claude Haiku 5.5",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "thinking": {
+         "type": "disabled"
+        }
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1791331200000
+     },
+     "cost": [
+      {
+       "input": 0.1,
+       "output": 0.5,
+       "cache": {
+        "read": 0.01,
+        "write": 0.125
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 100000
+       },
+       "input": 0.5,
+       "output": 2.5,
+       "cache": {
+        "read": 0.05,
+        "write": 0.625
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "mistral-large-4",
+     "modelID": "mistral-large-4",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "mistral-large",
+     "name": "Mistral Large 4",
+     "package": "\u0040opencode/ai/providers/mistral",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      }
+     ],
+     "time": {
+      "released": 1791244800000
+     },
+     "cost": [
+      {
+       "input": 0.68,
+       "output": 2.09,
+       "cache": {
+        "read": 0.07,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 524288,
+      "output": 262144
+     }
+    },
+    {
+     "id": "beam-free",
+     "modelID": "beam-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "beam-free",
+     "name": "Beam Free",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1791158400000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 131072
+     }
+    },
+    {
+     "id": "gpt-6.1-sol",
+     "modelID": "gpt-6.1-sol",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-sol",
+     "name": "GPT-6.1 Sol",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1790640000000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 10,
+       "cache": {
+        "read": 0.1,
+        "write": 2.5
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 4,
+       "output": 15,
+       "cache": {
+        "read": 0.2,
+        "write": 5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "claude-sonnet-5-5",
+     "modelID": "claude-sonnet-5-5",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "claude-sonnet",
+     "name": "Claude Sonnet 5.5",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1790553600000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 10,
+       "cache": {
+        "read": 0.1,
+        "write": 2.5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "mimo-v2.6-flash-free",
+     "modelID": "mimo-v2.6-flash-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "mimo-flash-free",
+     "name": "MiMo-V2.6-Flash Free",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "audio",
+       "video"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [],
+     "time": {
+      "released": 1790035200000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 200000,
+      "output": 32000
+     }
+    },
+    {
+     "id": "gpt-6-sol",
+     "modelID": "gpt-6-sol",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-sol",
+     "name": "GPT-6 Sol",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1790035200000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 10,
+       "cache": {
+        "read": 0.2,
+        "write": 2.5
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 4,
+       "output": 15,
+       "cache": {
+        "read": 0.4,
+        "write": 5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "gpt-6-luna",
+     "modelID": "gpt-6-luna",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-luna",
+     "name": "GPT-6 Luna",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1790035200000
+     },
+     "cost": [
+      {
+       "input": 0.1,
+       "output": 0.5,
+       "cache": {
+        "read": 0.01,
+        "write": 0.125
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 0.2,
+       "output": 0.75,
+       "cache": {
+        "read": 0.02,
+        "write": 0.25
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "claude-opus-5-5",
+     "modelID": "claude-opus-5-5",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "claude-opus",
+     "name": "Claude Opus 5.5",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1790035200000
+     },
+     "cost": [
+      {
+       "input": 4,
+       "output": 20,
+       "cache": {
+        "read": 0.2,
+        "write": 5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "grok-4.7",
+     "modelID": "grok-4.7",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "grok",
+     "name": "Grok 4.7",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1789948800000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 6,
+       "cache": {
+        "read": 0.5,
+        "write": 0
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 200000
+       },
+       "input": 4,
+       "output": 12,
+       "cache": {
+        "read": 1,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 500000,
+      "output": 500000
+     }
+    },
+    {
+     "id": "gpt-6-astra",
+     "modelID": "gpt-6-astra",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-astra",
+     "name": "GPT-6 Astra",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1788480000000
+     },
+     "cost": [
+      {
+       "input": 10,
+       "output": 50,
+       "cache": {
+        "read": 1,
+        "write": 12.5
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 20,
+       "output": 75,
+       "cache": {
+        "read": 2,
+        "write": 25
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "gemini-3.8-flash",
+     "modelID": "gemini-3.8-flash",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gemini-flash",
+     "name": "Gemini 3.8 Flash",
+     "package": "\u0040opencode/ai/providers/google",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/google/v1beta"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "audio",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "low"
+        }
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "medium"
+        }
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "high"
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1788307200000
+     },
+     "cost": [
+      {
+       "input": 0.75,
+       "output": 3.75,
+       "cache": {
+        "read": 0.075,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 65536
+     }
+    },
+    {
+     "id": "muse-spark-1.3",
+     "modelID": "muse-spark-1.3",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "muse-spark",
+     "name": "Muse Spark 1.3",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "pdf",
+       "audio"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "minimal",
+       "settings": {
+        "reasoningEffort": "minimal",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1788307200000
+     },
+     "cost": [
+      {
+       "input": 1.25,
+       "output": 4.25,
+       "cache": {
+        "read": 0.15,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 131072
+     }
+    },
+    {
+     "id": "claude-fable-5-1",
+     "modelID": "claude-fable-5-1",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "claude-fable",
+     "name": "Claude Fable 5.1",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1788220800000
+     },
+     "cost": [
+      {
+       "input": 10,
+       "output": 50,
+       "cache": {
+        "read": 0.25,
+        "write": 12.5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "glm-5.3-flash",
+     "modelID": "glm-5.3-flash",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "glm-flash",
+     "name": "GLM-5.3-Flash",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1787702400000
+     },
+     "cost": [
+      {
+       "input": 0.15,
+       "output": 0.5,
+       "cache": {
+        "read": 0.03,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 131072
+     }
+    },
+    {
+     "id": "qwen3.8-flash",
+     "modelID": "qwen3.8-flash",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "qwen-flash",
+     "name": "Qwen3.8 Flash",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "thinking": {
+         "type": "disabled"
+        }
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "medium"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "xhigh"
+       }
+      }
+     ],
+     "time": {
+      "released": 1787702400000
+     },
+     "cost": [
+      {
+       "input": 0.15,
+       "output": 0.47,
+       "cache": {
+        "read": 0.016,
+        "write": 0.2
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 131072
+     }
+    },
+    {
+     "id": "glm-5.3",
+     "modelID": "glm-5.3",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "glm",
+     "name": "GLM-5.3",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1786665600000
+     },
+     "cost": [
+      {
+       "input": 0.56,
+       "output": 1.76,
+       "cache": {
+        "read": 0.104,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 131072
+     }
+    },
+    {
+     "id": "nemotron-3.5-lightning-free",
+     "modelID": "nemotron-3.5-lightning-free",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "nemotron-lightning-free",
+     "name": "Nemotron 3.5 Lightning Free",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [],
+     "time": {
+      "released": 1786406400000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 262144,
+      "output": 262144
+     }
+    },
+    {
+     "id": "gemini-3.5-flash-lite",
+     "modelID": "gemini-3.5-flash-lite",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gemini-flash-lite",
+     "name": "Gemini 3.5 Flash Lite",
+     "package": "\u0040opencode/ai/providers/google",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/google/v1beta"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video",
+       "audio",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "minimal",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "minimal"
+        }
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "low"
+        }
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "medium"
+        }
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinkingConfig": {
+         "includeThoughts": true,
+         "thinkingLevel": "high"
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1784592000000
+     },
+     "cost": [
+      {
+       "input": 0.3,
+       "output": 2.5,
+       "cache": {
+        "read": 0.03,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 65536
+     }
+    },
+    {
+     "id": "kimi-k3",
+     "modelID": "kimi-k3",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "kimi",
+     "name": "Kimi K3",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1784160000000
+     },
+     "cost": [
+      {
+       "input": 3,
+       "output": 15,
+       "cache": {
+        "read": 0.3,
+        "write": 3
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1048576,
+      "output": 1048576
+     }
+    },
+    {
+     "id": "gpt-5.6-terra",
+     "modelID": "gpt-5.6-terra",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-terra",
+     "name": "GPT-5.6 Terra",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1783555200000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 12,
+       "cache": {
+        "read": 0.2,
+        "write": 2.5
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 4,
+       "output": 18,
+       "cache": {
+        "read": 0.4,
+        "write": 5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "claude-sonnet-5",
+     "modelID": "claude-sonnet-5",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "claude-sonnet",
+     "name": "Claude Sonnet 5",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "low"
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "medium"
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "high"
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "xhigh"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "adaptive",
+         "display": "summarized"
+        },
+        "effort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1782777600000
+     },
+     "cost": [
+      {
+       "input": 2,
+       "output": 10,
+       "cache": {
+        "read": 0.2,
+        "write": 2.5
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "kimi-k2.7-code",
+     "modelID": "kimi-k2.7-code",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "kimi-code",
+     "name": "Kimi K2.7 Code",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [],
+     "time": {
+      "released": 1781222400000
+     },
+     "cost": [
+      {
+       "input": 0.95,
+       "output": 4,
+       "cache": {
+        "read": 0.19,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 262144,
+      "output": 262144
+     }
+    },
+    {
+     "id": "minimax-m3",
+     "modelID": "minimax-m3",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "minimax-m",
+     "name": "MiniMax-M3",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [],
+     "time": {
+      "released": 1780272000000
+     },
+     "cost": [
+      {
+       "input": 0.3,
+       "output": 1.2,
+       "cache": {
+        "read": 0.06,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 512000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "deepseek-v4-pro",
+     "modelID": "deepseek-v4-pro",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "deepseek-pro",
+     "name": "DeepSeek V4 Pro",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high"
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "reasoningEffort": "max"
+       }
+      }
+     ],
+     "time": {
+      "released": 1776988800000
+     },
+     "cost": [
+      {
+       "input": 1.74,
+       "output": 3.48,
+       "cache": {
+        "read": 0.145,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1000000,
+      "output": 384000
+     }
+    },
+    {
+     "id": "gpt-5.5",
+     "modelID": "gpt-5.5",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt",
+     "name": "GPT-5.5",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1776902400000
+     },
+     "cost": [
+      {
+       "input": 5,
+       "output": 30,
+       "cache": {
+        "read": 0.5,
+        "write": 0
+       }
+      },
+      {
+       "tier": {
+        "type": "context",
+        "size": 272000
+       },
+       "input": 10,
+       "output": 45,
+       "cache": {
+        "read": 1,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "gpt-5.5-pro",
+     "modelID": "gpt-5.5-pro",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-pro",
+     "name": "GPT-5.5 Pro",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1776902400000
+     },
+     "cost": [
+      {
+       "input": 30,
+       "output": 180,
+       "cache": {
+        "read": 30,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 1050000,
+      "input": 922000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "grok-build-0.1",
+     "modelID": "grok-build-0.1",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "grok-build",
+     "name": "Grok Build 0.1",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [],
+     "time": {
+      "released": 1776297600000
+     },
+     "cost": [
+      {
+       "input": 1,
+       "output": 2,
+       "cache": {
+        "read": 0.2,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 256000,
+      "output": 256000
+     }
+    },
+    {
+     "id": "qwen3.6-plus",
+     "modelID": "qwen3.6-plus",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "qwen-plus",
+     "name": "Qwen3.6 Plus",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "video"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "thinking": {
+         "type": "disabled"
+        }
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "enabled",
+         "budgetTokens": 16000
+        }
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "enabled",
+         "budgetTokens": 31999
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1775088000000
+     },
+     "cost": [
+      {
+       "input": 0.5,
+       "output": 3,
+       "cache": {
+        "read": 0.05,
+        "write": 0.625
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 262144,
+      "output": 65536
+     }
+    },
+    {
+     "id": "gpt-5.4-nano",
+     "modelID": "gpt-5.4-nano",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-nano",
+     "name": "GPT-5.4 Nano",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1773705600000
+     },
+     "cost": [
+      {
+       "input": 0.2,
+       "output": 1.25,
+       "cache": {
+        "read": 0.02,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 400000,
+      "input": 272000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "gpt-5.4-mini",
+     "modelID": "gpt-5.4-mini",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-mini",
+     "name": "GPT-5.4 Mini",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1773705600000
+     },
+     "cost": [
+      {
+       "input": 0.75,
+       "output": 4.5,
+       "cache": {
+        "read": 0.075,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 400000,
+      "input": 272000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "gpt-5.3-codex-spark",
+     "modelID": "gpt-5.3-codex-spark",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-codex-spark",
+     "name": "GPT-5.3 Codex Spark",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": false
+     },
+     "variants": [
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1770249600000
+     },
+     "cost": [
+      {
+       "input": 1.75,
+       "output": 14,
+       "cache": {
+        "read": 0.175,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 128000,
+      "input": 128000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "gpt-5.3-codex",
+     "modelID": "gpt-5.3-codex",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "gpt-codex",
+     "name": "GPT-5.3 Codex",
+     "package": "\u0040opencode/ai/providers/openai/responses",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "freeform": [
+       "text",
+       "lark",
+       "regex"
+      ],
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "none",
+       "settings": {
+        "reasoningEffort": "none",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "low",
+       "settings": {
+        "reasoningEffort": "low",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "medium",
+       "settings": {
+        "reasoningEffort": "medium",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "high",
+       "settings": {
+        "reasoningEffort": "high",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      },
+      {
+       "id": "xhigh",
+       "settings": {
+        "reasoningEffort": "xhigh",
+        "reasoningSummary": "auto",
+        "include": [
+         "reasoning.encrypted_content"
+        ]
+       }
+      }
+     ],
+     "time": {
+      "released": 1770249600000
+     },
+     "cost": [
+      {
+       "input": 1.75,
+       "output": 14,
+       "cache": {
+        "read": 0.175,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 400000,
+      "input": 272000,
+      "output": 128000
+     }
+    },
+    {
+     "id": "big-pickle",
+     "modelID": "big-pickle",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "big-pickle",
+     "name": "Big Pickle",
+     "compatibility": {
+      "reasoningField": "reasoning_content"
+     },
+     "package": "\u0040opencode/ai/providers/openai-compatible",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/openai/v1",
+      "provider": "opencode"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [],
+     "time": {
+      "released": 1760659200000
+     },
+     "cost": [
+      {
+       "input": 0,
+       "output": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 200000,
+      "input": 160000,
+      "output": 32000
+     }
+    },
+    {
+     "id": "claude-haiku-4-5",
+     "modelID": "claude-haiku-4-5",
+     "providerID": "opencode",
+     "type": "chat",
+     "family": "claude-haiku",
+     "name": "Claude Haiku 4.5",
+     "package": "\u0040opencode/ai/providers/anthropic",
+     "settings": {
+      "baseURL": "https://opencode.ai/inference/anthropic/v1"
+     },
+     "capabilities": {
+      "tools": true,
+      "input": [
+       "text",
+       "image",
+       "pdf"
+      ],
+      "output": [
+       "text"
+      ],
+      "temperature": true
+     },
+     "variants": [
+      {
+       "id": "high",
+       "settings": {
+        "thinking": {
+         "type": "enabled",
+         "budgetTokens": 16000
+        }
+       }
+      },
+      {
+       "id": "max",
+       "settings": {
+        "thinking": {
+         "type": "enabled",
+         "budgetTokens": 31999
+        }
+       }
+      }
+     ],
+     "time": {
+      "released": 1760486400000
+     },
+     "cost": [
+      {
+       "input": 1,
+       "output": 5,
+       "cache": {
+        "read": 0.1,
+        "write": 1.25
+       }
+      }
+     ],
+     "status": "active",
+     "enabled": true,
+     "limit": {
+      "context": 200000,
+      "output": 64000
+     }
+    }
+   ]
+  }
+ },
+ "skills": {
+  "method": "GET",
+  "path": "/api/skill",
+  "status": 200,
+  "body": {
+   "data": [
+    {
+     "id": "fake-skill-1",
+     "name": "fake-skill-1",
+     "autoinvoke": null
+    },
+    {
+     "id": "fake-skill-2",
+     "name": "fake-skill-2",
+     "autoinvoke": null
+    },
+    {
+     "id": "fake-skill-3",
+     "name": "fake-skill-3",
+     "autoinvoke": null
+    },
+    {
+     "id": "fake-skill-4",
+     "name": "fake-skill-4",
+     "autoinvoke": null
+    }
+   ]
+  }
+ },
+ "commands": {
+  "method": "GET",
+  "path": "/api/command",
+  "status": 200,
+  "body": {
+   "location": {
+    "directory": "/vault"
+   },
+   "data": [
+    {
+     "name": "init",
+     "description": "guided AGENTS.md setup"
+    },
+    {
+     "name": "review",
+     "description": "review changes [commit|branch|pr], defaults to uncommitted"
+    },
+    {
+     "name": "goal",
+     "description": "keep working until an objective is met [pause|resume|clear]"
+    },
+    {
+     "name": "automation",
+     "description": "create an automation, or list, pause, resume and delete this project's automations"
+    }
+   ]
+  }
+ },
+ "openapi-route": "/openapi.json",
+ "interrupt-running": {
+  "method": "POST",
+  "path": "/api/session/ses_fake0003/interrupt",
+  "status": 200,
+  "body": {
+   "interrupted": true
+  }
+ },
+ "generate": {
+  "method": "POST",
+  "path": "/api/session/ses_fake0004/generate",
+  "status": 200,
+  "body": {
+   "data": {
+    "text": "OpenCode Spike Session",
+    "tokens": {
+     "input": 67,
+     "output": 6,
+     "reasoning": 69,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    },
+    "cost": 0
+   }
+  }
+ },
+ "unauthorized-none": {
+  "method": "GET",
+  "path": "/api/info",
+  "status": 401,
+  "body": {
+   "_tag": "UnauthorizedError",
+   "message": "Authentication required"
+  }
+ },
+ "unauthorized-wrong": {
+  "method": "GET",
+  "path": "/api/info",
+  "status": 401,
+  "body": {
+   "_tag": "UnauthorizedError",
+   "message": "Authentication required"
+  }
+ }
+}

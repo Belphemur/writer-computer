@@ -1,0 +1,84 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795489121019
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795489119022,
+     "firstToken": 1795489120901,
+     "streamed": 1795489121012,
+     "completed": 1795489121014
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "hy4-flash-free",
+     "providerID": "opencode",
+     "variant": "none"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "The image is red, and the heading in notes.md is \"Garden Plan\"."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 2352,
+     "output": 18,
+     "reasoning": 0,
+     "cache": {
+      "read": 5120,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795489119015
+    },
+    "text": "What colour is the attached image, and what is the heading in \u0040notes.md? Answer in one short line.",
+    "files": [
+     {
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGO4IyeHFTEMLQkAid1GAXiz9RcAAAAASUVORK5CYII=",
+      "mime": "image/png",
+      "source": {
+       "type": "inline"
+      },
+      "name": "red.png"
+     },
+     {
+      "data": "IyBHYXJkZW4gUGxhbgoKUGxhbnQgdG9tYXRvZXMgaW4gTWF5Lgo=",
+      "mime": "text/plain",
+      "source": {
+       "type": "uri",
+       "uri": "file:///vault/notes.md"
+      },
+      "name": "notes.md",
+      "mention": {
+       "start": 62,
+       "end": 71,
+       "text": "\u0040notes.md"
+      }
+     }
+    ],
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwMyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

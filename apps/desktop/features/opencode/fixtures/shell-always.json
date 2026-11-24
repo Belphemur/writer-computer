@@ -1,0 +1,190 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795488682557
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795488682089,
+     "firstToken": 1795488682474,
+     "streamed": 1795488682551,
+     "completed": 1795488682552
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "Both commands ran successfully. Now I just need to say done.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488682476,
+       "completed": 1795488682547
+      }
+     },
+     {
+      "type": "text",
+      "text": "done."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 119,
+     "output": 7,
+     "reasoning": 18,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795488681042,
+     "firstToken": 1795488681396,
+     "streamed": 1795488681654,
+     "completed": 1795488682079
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to run two shell commands sequentially, then say done. Let me run them one at a time as requested.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488681397,
+       "completed": 1795488681647
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "shell",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "command": "echo one"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "one\n"
+        }
+       ],
+       "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+       }
+      },
+      "time": {
+       "created": 1795488681604,
+       "ran": 1795488681650,
+       "completed": 1795488682074
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0002",
+      "name": "shell",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "command": "echo two"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "two\n"
+        }
+       ],
+       "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+       }
+      },
+      "time": {
+       "created": 1795488681638,
+       "ran": 1795488681653,
+       "completed": 1795488682078
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 29,
+     "output": 31,
+     "reasoning": 35,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795488681032
+    },
+    "text": "Run `echo one` with your shell tool, then run `echo two` with your shell tool. Then say done.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ },
+ "rest": {
+  "saved": {
+   "data": [
+    {
+     "id": "psv_fake0001",
+     "projectID": "prj_fake0001",
+     "action": "shell",
+     "resource": "echo *",
+     "time": {
+      "created": 1795488681940,
+      "updated": 1795488681940
+     }
+    }
+   ]
+  },
+  "pending": {
+   "location": {
+    "directory": "/vault"
+   },
+   "data": []
+  }
+ }
+}

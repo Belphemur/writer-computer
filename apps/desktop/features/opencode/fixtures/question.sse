@@ -1,0 +1,68 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795488887150,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"curious-star","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795488888638,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your question tool to ask me which fruit I prefer: apple or pear (give both as options, one with a description). Then tell me what I answered."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795488888640,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795488888646,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795488888647,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795488889220,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795488888655},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795488889222,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795488889223,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795488889341,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to use the question tool to ask which fruit they prefer: apple or pear, with both as options and one having a description. Then tell them what they answered.\n\nLet me call the question tool."}}
+
+data: {"id":"evt_fake0011","created":1795488889341,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"question"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795488889513,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.08e-05,"tokens":{"input":468,"output":8,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0013","created":1795488889515,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Apple or pear preference"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795488889612,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to use the question tool to ask which fruit they prefer: apple or pear, with both as options and one having a description. Then tell them what they answered.\n\nLet me call the question tool.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795488889616,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"questions\": [{\"question\": \"Which fruit do you prefer?\", \"header\": \"Fruit preference\", \"options\": [{\"label\": \"Apple\", \"description\": \"A crisp, sweet fruit that comes in many varieties.\"}, {\"label\": \"Pear\", \"description\": \"\"}]}]}"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795488889618,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"questions":[{"question":"Which fruit do you prefer?","header":"Fruit preference","options":[{"label":"Apple","description":"A crisp, sweet fruit that comes in many varieties."},{"label":"Pear","description":""}]}]},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795488889620,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795488889624,"type":"form.created","location":{"directory":"/vault"},"data":{"form":{"id":"frm_fake0001","sessionID":"ses_fake0001","title":"Questions","metadata":{"kind":"question","tool":{"messageID":"msg_fake0002","id":"call-fake-0001"}},"fields":[{"key":"q0","title":"Fruit preference","description":"Which fruit do you prefer?","type":"string","options":[{"value":"Apple","label":"Apple","description":"A crisp, sweet fruit that comes in many varieties."},{"value":"Pear","label":"Pear","description":""}],"custom":true}]}}}
+
+data: {"id":"evt_fake0019","created":1795488889865,"type":"form.replied","location":{"directory":"/vault"},"data":{"id":"frm_fake0001","sessionID":"ses_fake0001","answer":{"q0":"pear"}}}
+
+data: {"id":"evt_fake0020","created":1795488889865,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"User has answered your questions: \"Which fruit do you prefer?\"=\"pear\". You can now continue with the user's answers in mind."}],"metadata":{"answers":[["pear"]],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0021","created":1795488889868,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":37,"output":70,"reasoning":51,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0022","created":1795488889870,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.08e-05,"tokens":{"input":505,"output":78,"reasoning":51,"cache":{"read":6336,"write":0}}}}
+
+data: {"id":"evt_fake0023","created":1795488890340,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795488889883},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795488890344,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795488890346,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0026","created":1795488890414,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"The user answered \"pear\". I should tell them what they answered."}}
+
+data: {"id":"evt_fake0027","created":1795488890414,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795488890430,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"The user answered \"pear\". I should tell them what they answered.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795488890432,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"You answered: **pear**."}}
+
+data: {"id":"evt_fake0030","created":1795488890432,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"You answered: **pear**."},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795488890434,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795488890435,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"stop","rawFinish":"stop","tokens":{"input":197,"output":12,"reasoning":19,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0033","created":1795488890437,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.08e-05,"tokens":{"input":702,"output":90,"reasoning":70,"cache":{"read":12672,"write":0}}}}
+
+data: {"id":"evt_fake0034","created":1795488890441,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+

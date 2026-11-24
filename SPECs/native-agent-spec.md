@@ -745,6 +745,8 @@ The prompt goes on stdin, never in argv (so it is not visible in the process lis
 
 ### Other backends (OpenCode, Codex): future work
 
+**OpenCode: the confirmed protocol, mapping and plan are in [opencode-backend-spec.md](./opencode-backend-spec.md) (phase 0 spike, 2026-11-23). It supersedes the OpenCode bullets below where they differ (event names, resync, sub-agents, MCP tool names, permission names).**
+
 Settings > Agent already shows them as disabled "Coming soon" pills; none is implemented. Notes for whoever builds them (research only, nothing verified in this repo):
 
 - **Shape of the work.** A backend is a registry entry (`features/agent/web/lib/backends.ts`) plus a Rust mapper from its wire protocol to `AgentEvent` and encoders for the commands (the same split as `claude_stream.rs`), plus a detect command and a model source. The pane, history and note format stay unchanged; `writer-chat-backend` in the note already records the backend.

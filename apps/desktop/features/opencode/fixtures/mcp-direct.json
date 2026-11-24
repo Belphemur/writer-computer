@@ -1,0 +1,136 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795489071730
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795489071110,
+     "firstToken": 1795489071599,
+     "streamed": 1795489071722,
+     "completed": 1795489071724
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The tool returned 42. I'll tell the user.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795489071600,
+       "completed": 1795489071717
+      }
+     },
+     {
+      "type": "text",
+      "text": "The writer note_count tool returns **42** notes."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 126,
+     "output": 20,
+     "reasoning": 15,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795489069585,
+     "firstToken": 1795489070564,
+     "streamed": 1795489070821,
+     "completed": 1795489071086
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to call the note_count tool from the writer MCP server. I can see there's a tool called `writer_note_count` listed. Let me call it directly.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795489070566,
+       "completed": 1795489070814
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "writer_note_count",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {},
+       "content": [
+        {
+         "type": "text",
+         "text": "The fake vault holds 42 notes."
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795489070808,
+       "ran": 1795489070819,
+       "completed": 1795489071083
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3377,
+     "output": 10,
+     "reasoning": 45,
+     "cache": {
+      "read": 3008,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795489069572
+    },
+    "text": "Call your note_count tool from the writer MCP server and tell me the number it returns.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

@@ -1,0 +1,256 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0005",
+    "time": {
+     "created": 1795488639144
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795488638698,
+     "firstToken": 1795488639045,
+     "streamed": 1795488639138,
+     "completed": 1795488639139
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "Both replaced. Reply 'done'.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488639047,
+       "completed": 1795488639134
+      }
+     },
+     {
+      "type": "text",
+      "text": "done"
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 191,
+     "output": 4,
+     "reasoning": 14,
+     "cache": {
+      "read": 6464,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795488636773,
+     "firstToken": 1795488637333,
+     "streamed": 1795488638395,
+     "completed": 1795488638687
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "There are two occurrences of \"cat\". I'll replace both. Since edit requires unique match by default, I can either do two edits or use replaceAll. The user said \"using your edit tool\" (singular). Let me use replaceAll to replace all occurrences at once. Actually \"replace the word cat with dog (both places)\". Using replaceAll=true with oldString \"cat\" newString \"dog\" would replace both. That's one edit call. Good.\n\nBut careful: \"cat\" appears in \"cat named\" and \"The cat sleeps\". Both standalone word \"cat\". replaceAll works. Let me do it.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488637334,
+       "completed": 1795488638389
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0002",
+      "name": "edit",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "newString": "dog",
+        "oldString": "cat",
+        "path": "notes.md",
+        "replaceAll": true
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Edited notes.md (2 replacements)"
+        }
+       ],
+       "metadata": {
+        "files": [
+         {
+          "file": "notes.md",
+          "patch": "Index: notes.md\n===================================================================\n--- notes.md\n+++ notes.md\n\u0040\u0040 -1,4 +1,4 \u0040\u0040\n # Pets\n \n-I have a cat named Tom.\n-The cat sleeps all day.\n+I have a dog named Tom.\n+The dog sleeps all day.\n",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+         }
+        ],
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795488638281,
+       "ran": 1795488638393,
+       "completed": 1795488638685
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 131,
+     "output": 33,
+     "reasoning": 137,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795488635351,
+     "firstToken": 1795488636540,
+     "streamed": 1795488636752,
+     "completed": 1795488636762
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to replace \"cat\" with \"dog\" in both places in notes.md using the edit tool, then reply 'done'.\n\nLet me first read the file.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488636543,
+       "completed": 1795488636742
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "read",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "path": "notes.md"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Read file notes.md, lines 1-4\n1: # Pets\n2: \n3: I have a cat named Tom.\n4: The cat sleeps all day."
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795488636726,
+       "ran": 1795488636749,
+       "completed": 1795488636759
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3419,
+     "output": 14,
+     "reasoning": 43,
+     "cache": {
+      "read": 2944,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795488635344
+    },
+    "text": "In notes.md replace the word cat with dog (both places), using your edit tool. Then reply 'done'.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ },
+ "rest": {
+  "permission_list_mid": {
+   "data": [
+    {
+     "id": "per_fake0001",
+     "sessionID": "ses_fake0001",
+     "action": "edit",
+     "resources": [
+      "notes.md"
+     ],
+     "save": [
+      "*"
+     ],
+     "metadata": {
+      "files": [
+       {
+        "file": "notes.md",
+        "patch": "Index: notes.md\n===================================================================\n--- notes.md\n+++ notes.md\n\u0040\u0040 -1,4 +1,4 \u0040\u0040\n # Pets\n \n-I have a cat named Tom.\n-The cat sleeps all day.\n+I have a dog named Tom.\n+The dog sleeps all day.\n",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 2
+       }
+      ]
+     },
+     "source": {
+      "type": "tool",
+      "messageID": "msg_fake0003",
+      "id": "call-fake-0002"
+     }
+    }
+   ]
+  },
+  "diff_mid": {
+   "data": []
+  },
+  "diff_after": {
+   "data": []
+  }
+ }
+}

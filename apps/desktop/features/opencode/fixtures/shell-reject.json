@@ -1,0 +1,84 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795488679787,
+     "firstToken": 1795488680436,
+     "streamed": 1795488680573,
+     "completed": 1795488680695
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to run `echo hello` using the shell tool and report its output.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488680438,
+       "completed": 1795488680570
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "shell",
+      "executed": false,
+      "state": {
+       "status": "error",
+       "input": {
+        "command": "echo hello"
+       },
+       "error": {
+        "type": "aborted",
+        "message": "The user declined this tool call"
+       }
+      },
+      "time": {
+       "created": 1795488680550,
+       "ran": 1795488680572,
+       "completed": 1795488680691
+      }
+     }
+    ],
+    "finish": "error",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 22,
+     "output": 15,
+     "reasoning": 26,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    },
+    "error": {
+     "type": "aborted",
+     "message": "Step interrupted"
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795488679780
+    },
+    "text": "Run the shell command `echo hello` using your shell tool and tell me its output.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwMiIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

@@ -1,0 +1,346 @@
+{
+ "parent": {
+  "data": [
+   {
+    "id": "msg_fake0009",
+    "time": {
+     "created": 1795488942019
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0008",
+    "time": {
+     "created": 1795488941305,
+     "firstToken": 1795488941903,
+     "streamed": 1795488942013,
+     "completed": 1795488942014
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The subagent reported back. The first heading in notes.md is \"# Pets\". Let me relay this to the user.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488941905,
+       "completed": 1795488942008
+      }
+     },
+     {
+      "type": "text",
+      "text": "The writer-explorer sub-agent reported that the first heading in `notes.md` is **# Pets**."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 328,
+     "output": 27,
+     "reasoning": 29,
+     "cache": {
+      "read": 6400,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0007",
+    "metadata": {
+     "source": "subagent",
+     "childID": "ses_fake0002",
+     "agent": "writer-explorer",
+     "state": "completed"
+    },
+    "time": {
+     "created": 1795488941300
+    },
+    "text": "<background-result kind=\"subagent\" sessionID=\"ses_fake0002\" state=\"completed\" description=\"Read notes.md first heading\">\nThe first heading in notes.md is **# Pets**.\n</background-result>",
+    "description": "Read notes.md first heading",
+    "type": "synthetic"
+   },
+   {
+    "id": "msg_fake0010",
+    "time": {
+     "created": 1795488940760
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795488940140,
+     "firstToken": 1795488940493,
+     "streamed": 1795488940753,
+     "completed": 1795488940755
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The subagent is running in the background. I should wait for its result.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488940495,
+       "completed": 1795488940745
+      }
+     },
+     {
+      "type": "text",
+      "text": "I've launched the writer-explorer sub-agent to read `notes.md` and report its first heading. I'll let you know what it finds once it reports back."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 266,
+     "output": 35,
+     "reasoning": 25,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795488939482,
+     "firstToken": 1795488940008,
+     "streamed": 1795488940128,
+     "completed": 1795488940134
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to delegate to the writer-explorer sub-agent to read notes.md and report the first heading. Let me do that.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488940009,
+       "completed": 1795488940125
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "subagent",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "agent": "writer-explorer",
+        "description": "Read notes.md first heading",
+        "prompt": "Read the file notes.md in the current working directory and report its first heading."
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID."
+        }
+       ],
+       "metadata": {
+        "sessionID": "ses_fake0002",
+        "status": "running",
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795488940033,
+       "ran": 1795488940127,
+       "completed": 1795488940133
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3441,
+     "output": 48,
+     "reasoning": 34,
+     "cache": {
+      "read": 2944,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795488939474
+    },
+    "text": "Delegate to your writer-explorer sub-agent: have it read notes.md and report the first heading. Then tell me what it reported.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwOSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ },
+ "child": {
+  "data": [
+   {
+    "id": "msg_fake0011",
+    "time": {
+     "created": 1795488941290
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0006",
+    "time": {
+     "created": 1795488940887,
+     "firstToken": 1795488941271,
+     "streamed": 1795488941284,
+     "completed": 1795488941286
+    },
+    "type": "assistant",
+    "agent": "writer-explorer",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The first heading is \"# Pets\".",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488941272,
+       "completed": 1795488941282
+      }
+     },
+     {
+      "type": "text",
+      "text": "The first heading in notes.md is **# Pets**."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 100,
+     "output": 9,
+     "reasoning": 20,
+     "cache": {
+      "read": 5568,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0005",
+    "time": {
+     "created": 1795488940148,
+     "firstToken": 1795488940767,
+     "streamed": 1795488940866,
+     "completed": 1795488940874
+    },
+    "type": "assistant",
+    "agent": "writer-explorer",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to read notes.md in the current working directory and report its first heading.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488940768,
+       "completed": 1795488940859
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0002",
+      "name": "read",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "path": "notes.md"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Read file notes.md, lines 1-3\n1: # Pets\n2: \n3: I have a cat named Tom."
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795488940832,
+       "ran": 1795488940864,
+       "completed": 1795488940872
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 5589,
+     "output": 14,
+     "reasoning": 26,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795488940145
+    },
+    "text": "You are a subagent spawned by another session.\nRead the file notes.md in the current working directory and report its first heading.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAxMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

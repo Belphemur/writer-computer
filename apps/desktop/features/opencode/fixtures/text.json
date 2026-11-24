@@ -1,0 +1,71 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795488614273
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795488613687,
+     "firstToken": 1795488614253,
+     "streamed": 1795488614267,
+     "completed": 1795488614269
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "17*23 = 17*20 + 17*3 = 340 + 51 = 391.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488614254,
+       "completed": 1795488614264
+      }
+     },
+     {
+      "type": "text",
+      "text": "17 times 23 equals 391."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 3737,
+     "output": 7,
+     "reasoning": 48,
+     "cache": {
+      "read": 2624,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795488613679
+    },
+    "text": "What is 17*23? Think it through briefly, then answer in one short sentence.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwMyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

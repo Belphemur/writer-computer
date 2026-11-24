@@ -1,0 +1,158 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795488890441
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795488889883,
+     "firstToken": 1795488890344,
+     "streamed": 1795488890434,
+     "completed": 1795488890435
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user answered \"pear\". I should tell them what they answered.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488890346,
+       "completed": 1795488890430
+      }
+     },
+     {
+      "type": "text",
+      "text": "You answered: **pear**."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 197,
+     "output": 12,
+     "reasoning": 19,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795488888655,
+     "firstToken": 1795488889222,
+     "streamed": 1795488889620,
+     "completed": 1795488889868
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to use the question tool to ask which fruit they prefer: apple or pear, with both as options and one having a description. Then tell them what they answered.\n\nLet me call the question tool.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488889223,
+       "completed": 1795488889612
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "question",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "questions": [
+         {
+          "question": "Which fruit do you prefer?",
+          "header": "Fruit preference",
+          "options": [
+           {
+            "label": "Apple",
+            "description": "A crisp, sweet fruit that comes in many varieties."
+           },
+           {
+            "label": "Pear",
+            "description": ""
+           }
+          ]
+         }
+        ]
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "User has answered your questions: \"Which fruit do you prefer?\"=\"pear\". You can now continue with the user's answers in mind."
+        }
+       ],
+       "metadata": {
+        "answers": [
+         [
+          "pear"
+         ]
+        ],
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795488889341,
+       "ran": 1795488889618,
+       "completed": 1795488889865
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 37,
+     "output": 70,
+     "reasoning": 51,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795488888647
+    },
+    "text": "Use your question tool to ask me which fruit I prefer: apple or pear (give both as options, one with a description). Then tell me what I answered.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

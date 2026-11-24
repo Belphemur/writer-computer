@@ -1,0 +1,106 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795488975434,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"playful-eagle","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795488976027,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Run the shell command `sleep 6` with your shell tool, then reply with the single word: done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795488976028,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795488976035,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795488976035,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795488976606,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795488976043},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795488976610,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795488976613,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795488976716,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to run `sleep 6` and then reply with \"done\". Let me do that."}}
+
+data: {"id":"evt_fake0011","created":1795488976718,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795488976736,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to run `sleep 6` and then reply with \"done\". Let me do that.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795488976740,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"command\": \"sleep 6\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795488976743,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"command":"sleep 6"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795488976746,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795488976824,"type":"shell.created","location":{"directory":"/vault"},"data":{"info":{"id":"sh_fake0001","status":"running","command":"sleep 6","cwd":"/vault","shell":"/bin/zsh","file":"/home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0001.out","metadata":{"sessionID":"ses_fake0001"},"time":{"started":1795488976822},"pid":1}}}
+
+data: {"id":"evt_fake0017","created":1795488976824,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","metadata":{"shellID":"sh_fake0001"}}}
+
+data: {"id":"evt_fake0018","created":1795488976876,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":4.93e-05,"tokens":{"input":458,"output":7,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0019","created":1795488976877,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Shell sleep command"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795488976947,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0003","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"STEER: when you answer, write it in ALL CAPS."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+
+data: {"id":"evt_fake0021","created":1795488976953,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0004","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"QUEUED-1: afterwards say the word apple."},"delivery":"queue"}},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0022","created":1795488976958,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0005","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"QUEUED-2: afterwards say the word banana."},"delivery":"queue"}},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795488976963,"type":"session.inbox.cancelled","data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795488982844,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"(no output)"}],"metadata":{"status":"completed","truncated":false,"exit":0},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":2}}
+
+data: {"id":"evt_fake0025","created":1795488982848,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3355,"output":17,"reasoning":29,"cache":{"read":3008,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0026","created":1795488982850,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":4.93e-05,"tokens":{"input":3813,"output":24,"reasoning":29,"cache":{"read":3008,"write":0}}}}
+
+data: {"id":"evt_fake0027","created":1795488982857,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795488982861,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"shell","id":"sh_fake0001","sessionID":"ses_fake0001","status":"completed","title":"sleep 6","time":{"started":1795488976824,"completed":1795488982843},"shellID":"sh_fake0001","command":"sleep 6"}}}
+
+data: {"id":"evt_fake0029","created":1795488983246,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0006","started":1795488982870},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795488983249,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795488983251,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795488983354,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"The user wants me to reply with \"done\" but in ALL CAPS. So"}}
+
+data: {"id":"evt_fake0033","created":1795488983456,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" \"DONE\"."}}
+
+data: {"id":"evt_fake0034","created":1795488983611,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795488983616,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"The user wants me to reply with \"done\" but in ALL CAPS. So \"DONE\".","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0036","created":1795488983619,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"DONE"}}
+
+data: {"id":"evt_fake0037","created":1795488983619,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"DONE"},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795488983621,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795488983623,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","finish":"stop","rawFinish":"stop","tokens":{"input":3817,"output":3,"reasoning":28,"cache":{"read":2624,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795488983624,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":4.93e-05,"tokens":{"input":7630,"output":27,"reasoning":57,"cache":{"read":5632,"write":0}}}}
+
+data: {"id":"evt_fake0041","created":1795488983632,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795488984364,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0007","started":1795488983639},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0043","created":1795488984366,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795488984367,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795488984457,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007","ordinal":0,"delta":"The user wants me to say the word \"apple\" afterwards. But wait - the previous instruction said to write in ALL CAPS. Let me re-read.\n\n\"STEER: when you answer, write it in ALL CAPS.\" - This seems to be a steering instruction for when I answer.\n\n\"QUEUED-1: afterwards say the word apple.\" - This is a queued instruction to say the word apple afterwards.\n\nSo I should say \"APPLE\" (in all caps due to the steer instruction)."}}
+
+data: {"id":"evt_fake0046","created":1795488984457,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0047","created":1795488984458,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007","ordinal":0,"text":"The user wants me to say the word \"apple\" afterwards. But wait - the previous instruction said to write in ALL CAPS. Let me re-read.\n\n\"STEER: when you answer, write it in ALL CAPS.\" - This seems to be a steering instruction for when I answer.\n\n\"QUEUED-1: afterwards say the word apple.\" - This is a queued instruction to say the word apple afterwards.\n\nSo I should say \"APPLE\" (in all caps due to the steer instruction).","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":1}}
+
+data: {"id":"evt_fake0048","created":1795488984459,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007","ordinal":0,"delta":"APPLE"}}
+
+data: {"id":"evt_fake0049","created":1795488984459,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007","ordinal":0,"text":"APPLE"},"durable":{"aggregateID":"ses_fake0001","seq":36,"version":1}}
+
+data: {"id":"evt_fake0050","created":1795488984460,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0001","seq":37,"version":1}}
+
+data: {"id":"evt_fake0051","created":1795488984461,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0007","finish":"stop","rawFinish":"stop","tokens":{"input":89,"output":9,"reasoning":104,"cache":{"read":6400,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":38,"version":1}}
+
+data: {"id":"evt_fake0052","created":1795488984463,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":4.93e-05,"tokens":{"input":7719,"output":36,"reasoning":161,"cache":{"read":12032,"write":0}}}}
+
+data: {"id":"evt_fake0053","created":1795488984466,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":39,"version":1}}
+

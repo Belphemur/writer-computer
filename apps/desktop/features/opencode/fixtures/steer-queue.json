@@ -1,0 +1,202 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0008",
+    "time": {
+     "created": 1795488984466
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0007",
+    "time": {
+     "created": 1795488983639,
+     "firstToken": 1795488984366,
+     "streamed": 1795488984460,
+     "completed": 1795488984461
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to say the word \"apple\" afterwards. But wait - the previous instruction said to write in ALL CAPS. Let me re-read.\n\n\"STEER: when you answer, write it in ALL CAPS.\" - This seems to be a steering instruction for when I answer.\n\n\"QUEUED-1: afterwards say the word apple.\" - This is a queued instruction to say the word apple afterwards.\n\nSo I should say \"APPLE\" (in all caps due to the steer instruction).",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488984367,
+       "completed": 1795488984458
+      }
+     },
+     {
+      "type": "text",
+      "text": "APPLE"
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 89,
+     "output": 9,
+     "reasoning": 104,
+     "cache": {
+      "read": 6400,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795488983632
+    },
+    "text": "QUEUED-1: afterwards say the word apple.",
+    "type": "user"
+   },
+   {
+    "id": "msg_fake0006",
+    "time": {
+     "created": 1795488982870,
+     "firstToken": 1795488983249,
+     "streamed": 1795488983621,
+     "completed": 1795488983623
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to reply with \"done\" but in ALL CAPS. So \"DONE\".",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488983251,
+       "completed": 1795488983616
+      }
+     },
+     {
+      "type": "text",
+      "text": "DONE"
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 3817,
+     "output": 3,
+     "reasoning": 28,
+     "cache": {
+      "read": 2624,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795488982857
+    },
+    "text": "STEER: when you answer, write it in ALL CAPS.",
+    "type": "user"
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795488976043,
+     "firstToken": 1795488976610,
+     "streamed": 1795488976746,
+     "completed": 1795488982848
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to run `sleep 6` and then reply with \"done\". Let me do that.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795488976613,
+       "completed": 1795488976736
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "shell",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "command": "sleep 6"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "(no output)"
+        }
+       ],
+       "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+       }
+      },
+      "time": {
+       "created": 1795488976718,
+       "ran": 1795488976743,
+       "completed": 1795488982844
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3355,
+     "output": 17,
+     "reasoning": 29,
+     "cache": {
+      "read": 3008,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795488976035
+    },
+    "text": "Run the shell command `sleep 6` with your shell tool, then reply with the single word: done.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwOCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ },
+ "log-resync": "data: {\"type\":\"log.synced\",\"aggregateID\":\"ses_fake0001\",\"seq\":39}\n\n"
+}

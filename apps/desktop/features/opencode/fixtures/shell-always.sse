@@ -1,0 +1,94 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795488681014,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"misty-eagle","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795488681019,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Run `echo one` with your shell tool, then run `echo two` with your shell tool. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795488681021,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795488681029,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795488681032,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795488681393,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795488681042},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795488681396,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795488681397,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795488681500,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to run two shell commands sequentially, then say done. Let me run them"}}
+
+data: {"id":"evt_fake0011","created":1795488681604,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" one at a time as requested."}}
+
+data: {"id":"evt_fake0012","created":1795488681604,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795488681638,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795488681647,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to run two shell commands sequentially, then say done. Let me run them one at a time as requested.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795488681649,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"command\": \"echo one\"}"},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795488681650,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"command":"echo one"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795488681652,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","text":"{\"command\": \"echo two\"}"},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795488681653,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","input":{"command":"echo two"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795488681654,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795488681657,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"shell","resources":["echo one"],"save":["echo *"],"source":{"type":"tool","messageID":"msg_fake0002","id":"call-fake-0001"}}}
+
+data: {"id":"evt_fake0021","created":1795488681658,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0002","sessionID":"ses_fake0001","action":"shell","resources":["echo two"],"save":["echo *"],"source":{"type":"tool","messageID":"msg_fake0002","id":"call-fake-0002"}}}
+
+data: {"id":"evt_fake0022","created":1795488681703,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":4.95e-05,"tokens":{"input":460,"output":7,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0023","created":1795488681704,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Shell echo commands"},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795488681940,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"always"}}
+
+data: {"id":"evt_fake0025","created":1795488681942,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0002","reply":"always"}}
+
+data: {"id":"evt_fake0026","created":1795488682063,"type":"shell.created","location":{"directory":"/vault"},"data":{"info":{"id":"sh_fake0001","status":"running","command":"echo one","cwd":"/vault","shell":"/bin/zsh","file":"/home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0001.out","metadata":{"sessionID":"ses_fake0001"},"time":{"started":1795488682060},"pid":1}}}
+
+data: {"id":"evt_fake0027","created":1795488682063,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","metadata":{"shellID":"sh_fake0001"}}}
+
+data: {"id":"evt_fake0028","created":1795488682065,"type":"shell.created","location":{"directory":"/vault"},"data":{"info":{"id":"sh_fake0002","status":"running","command":"echo two","cwd":"/vault","shell":"/bin/zsh","file":"/home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0002.out","metadata":{"sessionID":"ses_fake0001"},"time":{"started":1795488682063},"pid":1}}}
+
+data: {"id":"evt_fake0029","created":1795488682065,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","metadata":{"shellID":"sh_fake0002"}}}
+
+data: {"id":"evt_fake0030","created":1795488682074,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"one\n"}],"metadata":{"status":"completed","truncated":false,"exit":0},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":2}}
+
+data: {"id":"evt_fake0031","created":1795488682077,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"shell","id":"sh_fake0001","sessionID":"ses_fake0001","status":"completed","title":"echo one","time":{"started":1795488682063,"completed":1795488682073},"shellID":"sh_fake0001","command":"echo one"}}}
+
+data: {"id":"evt_fake0032","created":1795488682078,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","content":[{"type":"text","text":"two\n"}],"metadata":{"status":"completed","truncated":false,"exit":0},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":2}}
+
+data: {"id":"evt_fake0033","created":1795488682079,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":29,"output":31,"reasoning":35,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0034","created":1795488682081,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":4.95e-05,"tokens":{"input":489,"output":38,"reasoning":35,"cache":{"read":6336,"write":0}}}}
+
+data: {"id":"evt_fake0035","created":1795488682085,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"shell","id":"sh_fake0002","sessionID":"ses_fake0001","status":"completed","title":"echo two","time":{"started":1795488682065,"completed":1795488682077},"shellID":"sh_fake0002","command":"echo two"}}}
+
+data: {"id":"evt_fake0036","created":1795488682471,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795488682089},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795488682474,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795488682476,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795488682543,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"Both commands ran successfully. Now I just need to say done."}}
+
+data: {"id":"evt_fake0040","created":1795488682543,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795488682547,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"Both commands ran successfully. Now I just need to say done.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795488682549,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"done."}}
+
+data: {"id":"evt_fake0043","created":1795488682549,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"done."},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795488682551,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795488682552,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"stop","rawFinish":"stop","tokens":{"input":119,"output":7,"reasoning":18,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0046","created":1795488682554,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":4.95e-05,"tokens":{"input":608,"output":45,"reasoning":53,"cache":{"read":12672,"write":0}}}}
+
+data: {"id":"evt_fake0047","created":1795488682557,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
