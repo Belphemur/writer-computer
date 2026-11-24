@@ -69,6 +69,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 **Infra**
 
 - [docs/releasing.md](./docs/releasing.md) — how releases are cut: a `v*` tag builds macOS (ad-hoc signed DMG) and Linux (AppImage, .deb, .rpm) in CI and drafts the release on `Belphemur/writer-computer`; the local script is the fallback
+- [.agents/skills/writer-release/SKILL.md](./.agents/skills/writer-release/SKILL.md) — the agent's checklist for cutting a version: bump, changelog, signed commit, CI, tag, hand the draft over (never publish)
 - [docs/telemetry.md](./docs/telemetry.md) — opt-in usage telemetry: the full event/property disclosure, the three off-switches, and the rule that adding an event touches the call site, the doc, and the consent dialog together
 - [docs/website-deploy.md](./docs/website-deploy.md) — how to deploy the marketing website to Cloudflare Workers, plus its search/AI-crawler surface (JSON-LD, `robots.txt`, `sitemap.xml`, `llms.txt`) and the `/docs/` pages (comparisons under `/docs/compare/`) built from markdown
 - [docs/website-analytics.md](./docs/website-analytics.md) — the marketing website's PostHog events, the two build-time env vars, and the rule that a missing key makes the site inert

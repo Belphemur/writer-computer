@@ -47,6 +47,7 @@ SPECs/Agent/qa-typing-pass-2026-10-04/videos/
 !.agents/skills/engineering-philosophy/
 !.agents/skills/writer-feature/
 !.agents/skills/writer-decisions/
+!.agents/skills/writer-release/
 .claude/skills/*
 
 # OpenCode recorder work folders (raw captures hold unscrubbed local paths)
