@@ -113,7 +113,12 @@ impl Exec {
     /// `git` stub in `/usr/bin` that only asks to install the Command Line Tools).
     pub(crate) fn path(&self) -> std::ffi::OsString {
         let mut prefix = self.prefix.clone();
-        prefix.extend(self.lfs_dir());
+        // A `git-lfs` in a system dir (Ubuntu's `/usr/bin`) is already on the path, last: moving
+        // that dir to the front would put macOS's `/usr/bin/git` stub before Homebrew's git.
+        prefix.extend(
+            self.lfs_dir()
+                .filter(|d| !SYSTEM_DIRS.iter().any(|s| d == Path::new(s))),
+        );
         join_path(&prefix, self.search_dirs(), !self.only_prefix)
     }
 
@@ -379,8 +384,11 @@ fn log_call(what: &str, took: Duration, result: &Result<Output, RunError>) {
 }
 
 /// `prefix`, then `dirs`, de-duplicated; `/usr/bin` and `/bin` last when `system` is set.
+/// The system dirs a child's `PATH` keeps last ([`join_path`]).
+const SYSTEM_DIRS: [&str; 2] = ["/usr/bin", "/bin"];
+
 fn join_path(prefix: &[PathBuf], dirs: Vec<PathBuf>, system: bool) -> std::ffi::OsString {
-    let system_dirs = [PathBuf::from("/usr/bin"), PathBuf::from("/bin")];
+    let system_dirs = SYSTEM_DIRS.map(PathBuf::from);
     let mut parts: Vec<PathBuf> = prefix.to_vec();
     parts.extend(
         dirs.into_iter()
