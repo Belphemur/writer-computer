@@ -1,0 +1,1144 @@
+{
+ "question": "C2: which lever keeps a global MCP server from starting?",
+ "variants": [
+  {
+   "variant": "baseline: no lever",
+   "writer_config_extra": null,
+   "writer_servers_override": {},
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "connected",
+    "g-b": "connected",
+    "g-r": "pending",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "connected",
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-a",
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-a",
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-a",
+     "g-b",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "L1a partial per-server {disabled:true} in Writer's file for g-a",
+   "writer_config_extra": null,
+   "writer_servers_override": {
+    "g-a": {
+     "disabled": true
+    }
+   },
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "connected",
+    "g-b": "connected",
+    "g-r": "pending",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "connected",
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-a",
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-a",
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-a",
+     "g-b",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "L1b full per-server {type,command,disabled:true} in Writer's file for g-a",
+   "writer_config_extra": null,
+   "writer_servers_override": {
+    "g-a": {
+     "type": "local",
+     "command": [
+      "/opt/homebrew/bin/node",
+      "<home>/repos/writer-computer/.<blob>.cjs",
+      "--name",
+      "g-a"
+     ],
+     "disabled": true
+    }
+   },
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "disabled",
+    "g-b": "connected",
+    "g-r": "pending",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "disabled",
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-b",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "L2a policies [mcp.use * deny, mcp.use writer allow]",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "*",
+      "effect": "deny"
+     },
+     {
+      "action": "mcp.use",
+      "resource": "writer",
+      "effect": "allow"
+     }
+    ]
+   },
+   "writer_servers_override": {},
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "writer"
+   ],
+   "remote_initialized": false,
+   "initialized": [
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "L2b policies [mcp.use writer allow, mcp.use * deny] (reverse order)",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "writer",
+      "effect": "allow"
+     },
+     {
+      "action": "mcp.use",
+      "resource": "*",
+      "effect": "deny"
+     }
+    ]
+   },
+   "writer_servers_override": {},
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {},
+   "mcp_settled": {},
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [],
+   "remote_initialized": false,
+   "initialized": [],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": []
+   }
+  },
+  {
+   "variant": "L2c policies [deny *, allow writer, allow g-a] (one switched on)",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "*",
+      "effect": "deny"
+     },
+     {
+      "action": "mcp.use",
+      "resource": "writer",
+      "effect": "allow"
+     },
+     {
+      "action": "mcp.use",
+      "resource": "g-a",
+      "effect": "allow"
+     }
+    ]
+   },
+   "writer_servers_override": {},
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "connected",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-a",
+    "writer"
+   ],
+   "remote_initialized": false,
+   "initialized": [
+    "g-a",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-a",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "L2d policies [mcp.use g-a deny] only (named deny)",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "g-a",
+      "effect": "deny"
+     }
+    ]
+   },
+   "writer_servers_override": {},
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-b": "connected",
+    "g-r": "pending",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-b",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "X1 Writer deny * ; GLOBAL policies allow g-b",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "*",
+      "effect": "deny"
+     },
+     {
+      "action": "mcp.use",
+      "resource": "writer",
+      "effect": "allow"
+     }
+    ]
+   },
+   "writer_servers_override": {},
+   "global_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "g-b",
+      "effect": "allow"
+     }
+    ]
+   },
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-b": "connected",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-b": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": false,
+   "initialized": [
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-b",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "X2 Writer disabled:true for g-a ; GLOBAL g-a has disabled:false",
+   "writer_config_extra": null,
+   "writer_servers_override": {
+    "g-a": {
+     "type": "local",
+     "command": [
+      "/opt/homebrew/bin/node",
+      "<home>/repos/writer-computer/.<blob>.cjs",
+      "--name",
+      "g-a"
+     ],
+     "disabled": true
+    }
+   },
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "disabled",
+    "g-b": "connected",
+    "g-r": "pending",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "disabled",
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-b",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "X3 GLOBAL g-b disabled:true ; Writer sets g-b disabled:false (partial)",
+   "writer_config_extra": null,
+   "writer_servers_override": {
+    "g-b": {
+     "disabled": false
+    }
+   },
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "connected",
+    "g-b": "disabled",
+    "g-r": "pending",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "connected",
+    "g-b": "disabled",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-a",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-a",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-a",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "X4 GLOBAL policies deny * ; Writer policies allow g-a",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "g-a",
+      "effect": "allow"
+     },
+     {
+      "action": "mcp.use",
+      "resource": "writer",
+      "effect": "allow"
+     }
+    ]
+   },
+   "writer_servers_override": {},
+   "global_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "*",
+      "effect": "deny"
+     }
+    ]
+   },
+   "mcp_http": 200,
+   "mcp_after_boot": {},
+   "mcp_settled": {},
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [],
+   "remote_initialized": false,
+   "initialized": [],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": []
+   }
+  },
+  {
+   "variant": "L1c placeholder per-server {type:local,command:[true],disabled:true} (name-only, no real command)",
+   "writer_config_extra": null,
+   "writer_servers_override": {
+    "g-a": {
+     "type": "local",
+     "command": [
+      "true"
+     ],
+     "disabled": true
+    }
+   },
+   "global_extra": null,
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "disabled",
+    "g-b": "connected",
+    "g-r": "pending",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "disabled",
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-b",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "N1 names step: deny-all policies, GET /api/config as the first call",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "*",
+      "effect": "deny"
+     },
+     {
+      "action": "mcp.use",
+      "resource": "writer",
+      "effect": "allow"
+     }
+    ]
+   },
+   "writer_servers_override": {},
+   "global_extra": null,
+   "config_http": 200,
+   "config_documents": [
+    {
+     "type": "document",
+     "info_keys": [
+      "mcp",
+      "providers"
+     ],
+     "mcp_server_names": [
+      "g-a",
+      "g-b",
+      "g-r"
+     ],
+     "policies": null
+    },
+    {
+     "type": "directory",
+     "info_keys": [],
+     "mcp_server_names": [],
+     "policies": null
+    },
+    {
+     "type": "document",
+     "info_keys": [
+      "agents",
+      "default_agent",
+      "mcp",
+      "permissions",
+      "policies"
+     ],
+     "mcp_server_names": [
+      "writer"
+     ],
+     "policies": [
+      {
+       "action": "mcp.use",
+       "resource": "*",
+       "effect": "deny"
+      },
+      {
+       "action": "mcp.use",
+       "resource": "writer",
+       "effect": "allow"
+      }
+     ]
+    }
+   ],
+   "spawned_right_after_config": [],
+   "remote_initialized_right_after_config": false,
+   "spawned_3s_after_config": [
+    "writer"
+   ],
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "writer"
+   ],
+   "remote_initialized": false,
+   "initialized": [
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "N0 names step baseline (no lever): GET /api/config first",
+   "writer_config_extra": null,
+   "writer_servers_override": {},
+   "global_extra": null,
+   "config_http": 200,
+   "config_documents": [
+    {
+     "type": "document",
+     "info_keys": [
+      "mcp",
+      "providers"
+     ],
+     "mcp_server_names": [
+      "g-a",
+      "g-b",
+      "g-r"
+     ],
+     "policies": null
+    },
+    {
+     "type": "directory",
+     "info_keys": [],
+     "mcp_server_names": [],
+     "policies": null
+    },
+    {
+     "type": "document",
+     "info_keys": [
+      "agents",
+      "default_agent",
+      "mcp",
+      "permissions",
+      "policies"
+     ],
+     "mcp_server_names": [
+      "writer"
+     ],
+     "policies": []
+    }
+   ],
+   "spawned_right_after_config": [],
+   "remote_initialized_right_after_config": false,
+   "spawned_3s_after_config": [
+    "g-a",
+    "g-b",
+    "writer"
+   ],
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "connected",
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "connected",
+    "g-b": "connected",
+    "g-r": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-a",
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": true,
+   "initialized": [
+    "g-a",
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-a",
+     "g-b",
+     "g-r",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "X5 policies from OPENCODE_CONFIG_CONTENT [deny *, allow writer] ; GLOBAL policies allow g-b",
+   "writer_config_extra": null,
+   "writer_servers_override": {},
+   "global_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "g-b",
+      "effect": "allow"
+     }
+    ]
+   },
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-b": "connected",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-b": "connected",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "g-b",
+    "writer"
+   ],
+   "remote_initialized": false,
+   "initialized": [
+    "g-b",
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "g-b",
+     "writer"
+    ]
+   }
+  },
+  {
+   "variant": "X6 policies from OPENCODE_CONFIG_CONTENT [deny *, allow writer] ; GLOBAL policies deny *",
+   "writer_config_extra": null,
+   "writer_servers_override": {},
+   "global_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "*",
+      "effect": "deny"
+     }
+    ]
+   },
+   "mcp_http": 200,
+   "mcp_after_boot": {},
+   "mcp_settled": {},
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [],
+   "remote_initialized": false,
+   "initialized": [],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": []
+   }
+  },
+  {
+   "variant": "X7 per-server placeholders for every global name in Writer's file ; GLOBAL policies allow g-a",
+   "writer_config_extra": null,
+   "writer_servers_override": {
+    "g-a": {
+     "type": "local",
+     "command": [
+      "true"
+     ],
+     "disabled": true
+    },
+    "g-b": {
+     "type": "local",
+     "command": [
+      "true"
+     ],
+     "disabled": true
+    },
+    "g-r": {
+     "type": "local",
+     "command": [
+      "true"
+     ],
+     "disabled": true
+    }
+   },
+   "global_extra": {
+    "policies": [
+     {
+      "action": "mcp.use",
+      "resource": "g-a",
+      "effect": "allow"
+     }
+    ]
+   },
+   "mcp_http": 200,
+   "mcp_after_boot": {
+    "g-a": "disabled",
+    "g-b": "disabled",
+    "g-r": "disabled",
+    "writer": "connected"
+   },
+   "mcp_settled": {
+    "g-a": "disabled",
+    "g-b": "disabled",
+    "g-r": "disabled",
+    "writer": "connected"
+   },
+   "agents_ok": true,
+   "turn": "session.execution.succeeded",
+   "spawned": [
+    "writer"
+   ],
+   "remote_initialized": false,
+   "initialized": [
+    "writer"
+   ],
+   "offered_to_model": {
+    "tools": [
+     "edit",
+     "execute",
+     "generate_image",
+     "generate_video",
+     "glob",
+     "grep",
+     "question",
+     "read",
+     "shell",
+     "skill",
+     "subagent",
+     "webfetch",
+     "websearch",
+     "write"
+    ],
+    "catalog_servers": [
+     "writer"
+    ]
+   }
+  }
+ ],
+ "scale": [
+  {
+   "variant": "S0 one global server, allowed",
+   "global_servers": 1,
+   "denied_by_policy": false,
+   "first_turn_s": 1.7,
+   "turn": "session.execution.succeeded",
+   "spawn_events": 2,
+   "status_counts": {
+    "connected": 2,
+    "failed": 0,
+    "pending": 0,
+    "disabled": 0
+   }
+  },
+  {
+   "variant": "S1 30 global servers, all allowed",
+   "global_servers": 30,
+   "denied_by_policy": false,
+   "first_turn_s": 1.7,
+   "turn": "session.execution.succeeded",
+   "spawn_events": 31,
+   "status_counts": {
+    "connected": 31,
+    "failed": 0,
+    "pending": 0,
+    "disabled": 0
+   }
+  },
+  {
+   "variant": "S2 30 global servers, denied by policy",
+   "global_servers": 30,
+   "denied_by_policy": true,
+   "first_turn_s": 1.7,
+   "turn": "session.execution.succeeded",
+   "spawn_events": 1,
+   "status_counts": {
+    "connected": 1,
+    "failed": 0,
+    "pending": 0,
+    "disabled": 0
+   }
+  }
+ ]
+}

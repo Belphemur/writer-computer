@@ -1,0 +1,131 @@
+{
+ "question": "K1: claude mcp list names and cost",
+ "claude_version": "2.1.330 (Claude Code)",
+ "claude_mcp_add_accepts": {
+  "plain": {
+   "exit": 0,
+   "message": "Added stdio MCP server plain with command: /opt/homebrew/bin/node <server> --name x to user config"
+  },
+  "with-dash_and_Under2": {
+   "exit": 0,
+   "message": "Added stdio MCP server with-dash_and_Under2 with command: /opt/homebrew/bin/node <server> --name x to user config"
+  },
+  "my.srv": {
+   "exit": 1,
+   "message": "Invalid name my.srv. Names can only contain letters, numbers, hyphens, and underscores."
+  },
+  "my srv": {
+   "exit": 1,
+   "message": "Invalid name my srv. Names can only contain letters, numbers, hyphens, and underscores."
+  },
+  "my:srv": {
+   "exit": 1,
+   "message": "Invalid name my:srv. Names can only contain letters, numbers, hyphens, and underscores."
+  }
+ },
+ "hand_written_names": {
+  "exit": 0,
+  "seconds": 1.36,
+  "stdout_lines": [
+   "Checking MCP server health\u2026",
+   "plain: /opt/homebrew/bin/node <server> --name plain --marker <run>/0.mark - \u2714 Connected",
+   "my.srv: /opt/homebrew/bin/node <server> --name my.srv --marker <run>/1.mark - \u2714 Connected",
+   "my srv: /opt/homebrew/bin/node <server> --name my srv --marker <run>/2.mark - \u2714 Connected",
+   "my:srv: /opt/homebrew/bin/node <server> --name my:srv --marker <run>/3.mark - \u2714 Connected",
+   "UPPER_case-1: /opt/homebrew/bin/node <server> --name UPPER_case-1 --marker <run>/4.mark - \u2714 Connected",
+   "a: b: /opt/homebrew/bin/node <server> --name a: b --marker <run>/5.mark - \u2714 Connected"
+  ],
+  "stderr_lines": [],
+  "spawned_by_the_check": [
+   "UPPER_case-1",
+   "a: b",
+   "my srv",
+   "my.srv",
+   "my:srv",
+   "plain"
+  ]
+ },
+ "project_mcp_json": {
+  "seconds": 1.32,
+  "stdout_lines": [
+   "Checking MCP server health\u2026",
+   "proj.srv: /opt/homebrew/bin/node <server> --name proj.srv - \u23f8 Pending approval (run `claude` to approve)",
+   "proj-ok: /opt/homebrew/bin/node <server> --name proj-ok - \u23f8 Pending approval (run `claude` to approve)"
+  ]
+ },
+ "timing": [
+  {
+   "case": "1 healthy",
+   "healthy": 1,
+   "failing": 0,
+   "dead_remote": false,
+   "seconds": 1.34,
+   "counts": {
+    "connected": 1,
+    "failed": 0
+   },
+   "exit": 0
+  },
+  {
+   "case": "5 healthy",
+   "healthy": 5,
+   "failing": 0,
+   "dead_remote": false,
+   "seconds": 1.35,
+   "counts": {
+    "connected": 5,
+    "failed": 0
+   },
+   "exit": 0
+  },
+  {
+   "case": "10 healthy",
+   "healthy": 10,
+   "failing": 0,
+   "dead_remote": false,
+   "seconds": 1.42,
+   "counts": {
+    "connected": 10,
+    "failed": 0
+   },
+   "exit": 0
+  },
+  {
+   "case": "5 healthy, 3 failing",
+   "healthy": 5,
+   "failing": 3,
+   "dead_remote": false,
+   "seconds": 1.44,
+   "counts": {
+    "connected": 5,
+    "failed": 3
+   },
+   "exit": 0
+  },
+  {
+   "case": "5 healthy, 1 dead remote",
+   "healthy": 5,
+   "failing": 0,
+   "dead_remote": true,
+   "seconds": 1.36,
+   "counts": {
+    "connected": 5,
+    "failed": 1
+   },
+   "exit": 0
+  },
+  {
+   "case": "30 healthy",
+   "healthy": 30,
+   "failing": 0,
+   "dead_remote": false,
+   "seconds": 1.65,
+   "counts": {
+    "connected": 30,
+    "failed": 0
+   },
+   "exit": 0
+  }
+ ],
+ "not_captured": "claude.ai connectors (names such as `claude.ai Atlassian`, tool prefix `mcp__claude_ai_Atlassian__`) need a login: not reproducible with a temp config and a dummy key"
+}

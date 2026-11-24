@@ -1,0 +1,351 @@
+{
+ "question": "C10: what can a global plugin reach, and when does it load?",
+ "variants": [
+  {
+   "variant": "plugin in the global plugins/ folder",
+   "how": "folder",
+   "setup_ran_before_any_api_call": false,
+   "plugin_list": {
+    "http": 200,
+    "entries": 101,
+    "ours": [
+     {
+      "source_type": "local",
+      "state": "active",
+      "features": {
+       "server": true
+      }
+     }
+    ],
+    "ms": 130
+   },
+   "setup_ran": true,
+   "setup_ms_after_ready": 4715,
+   "context_surface": {
+    "app": [
+     "name",
+     "version",
+     "channel"
+    ],
+    "location": [
+     "directory",
+     "workspaceID",
+     "project"
+    ],
+    "options": [],
+    "agent": [
+     "get",
+     "list",
+     "transform",
+     "reload"
+    ],
+    "aisdk": [
+     "hook"
+    ],
+    "command": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "cred": [
+     "activate"
+    ],
+    "event": [
+     "subscribe"
+    ],
+    "experimental": [
+     "terminal",
+     "generate",
+     "artifact"
+    ],
+    "generate": [
+     "text"
+    ],
+    "model": [
+     "list",
+     "default",
+     "transform",
+     "reload"
+    ],
+    "provider": [
+     "list",
+     "get",
+     "transform",
+     "reload"
+    ],
+    "integration": [
+     "list",
+     "get",
+     "connect",
+     "oauth",
+     "command",
+     "transform",
+     "reload",
+     "connection"
+    ],
+    "mcp": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "permission": [
+     "hook",
+     "list",
+     "get",
+     "reply",
+     "assert"
+    ],
+    "plugin": [
+     "list"
+    ],
+    "reference": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "rpc": "function",
+    "skill": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "storage": [
+     "get",
+     "set",
+     "remove",
+     "scan"
+    ],
+    "tool": [
+     "reload",
+     "list",
+     "transform",
+     "hook"
+    ],
+    "vcs": [
+     "get",
+     "base",
+     "branch",
+     "status",
+     "diff",
+     "reload",
+     "transform"
+    ],
+    "websearch": [
+     "providers",
+     "query",
+     "reload",
+     "transform"
+    ],
+    "worktree": [
+     "list",
+     "create",
+     "remove",
+     "refresh",
+     "reload",
+     "transform"
+    ],
+    "session": [
+     "hook",
+     "list",
+     "create",
+     "get",
+     "remove",
+     "switchAgent",
+     "switchModel",
+     "prompt",
+     "generate",
+     "command",
+     "compact",
+     "synthetic",
+     "interrupt",
+     "update",
+     "move",
+     "wait",
+     "context",
+     "instructions"
+    ],
+    "shell": [
+     "hook"
+    ]
+   },
+   "edit_asked": true,
+   "a.txt_after": "alpha",
+   "permission_hook_invoked": false,
+   "event_subscription_saw_permission": [],
+   "turn": "session.execution.interrupted"
+  },
+  {
+   "variant": "plugin named in the global config `plugins` array",
+   "how": "config",
+   "setup_ran_before_any_api_call": false,
+   "plugin_list": {
+    "http": 200,
+    "entries": 101,
+    "ours": [
+     {
+      "source_type": "local",
+      "state": "active",
+      "features": {
+       "server": true
+      }
+     }
+    ],
+    "ms": 3
+   },
+   "setup_ran": true,
+   "setup_ms_after_ready": 4730,
+   "context_surface": {
+    "app": [
+     "name",
+     "version",
+     "channel"
+    ],
+    "location": [
+     "directory",
+     "workspaceID",
+     "project"
+    ],
+    "options": [],
+    "agent": [
+     "get",
+     "list",
+     "transform",
+     "reload"
+    ],
+    "aisdk": [
+     "hook"
+    ],
+    "command": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "cred": [
+     "activate"
+    ],
+    "event": [
+     "subscribe"
+    ],
+    "experimental": [
+     "terminal",
+     "generate",
+     "artifact"
+    ],
+    "generate": [
+     "text"
+    ],
+    "model": [
+     "list",
+     "default",
+     "transform",
+     "reload"
+    ],
+    "provider": [
+     "list",
+     "get",
+     "transform",
+     "reload"
+    ],
+    "integration": [
+     "list",
+     "get",
+     "connect",
+     "oauth",
+     "command",
+     "transform",
+     "reload",
+     "connection"
+    ],
+    "mcp": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "permission": [
+     "hook",
+     "list",
+     "get",
+     "reply",
+     "assert"
+    ],
+    "plugin": [
+     "list"
+    ],
+    "reference": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "rpc": "function",
+    "skill": [
+     "list",
+     "transform",
+     "reload"
+    ],
+    "storage": [
+     "get",
+     "set",
+     "remove",
+     "scan"
+    ],
+    "tool": [
+     "reload",
+     "list",
+     "transform",
+     "hook"
+    ],
+    "vcs": [
+     "get",
+     "base",
+     "branch",
+     "status",
+     "diff",
+     "reload",
+     "transform"
+    ],
+    "websearch": [
+     "providers",
+     "query",
+     "reload",
+     "transform"
+    ],
+    "worktree": [
+     "list",
+     "create",
+     "remove",
+     "refresh",
+     "reload",
+     "transform"
+    ],
+    "session": [
+     "hook",
+     "list",
+     "create",
+     "get",
+     "remove",
+     "switchAgent",
+     "switchModel",
+     "prompt",
+     "generate",
+     "command",
+     "compact",
+     "synthetic",
+     "interrupt",
+     "update",
+     "move",
+     "wait",
+     "context",
+     "instructions"
+    ],
+    "shell": [
+     "hook"
+    ]
+   },
+   "edit_asked": true,
+   "a.txt_after": "alpha",
+   "permission_hook_invoked": false,
+   "event_subscription_saw_permission": [],
+   "turn": "session.execution.interrupted"
+  }
+ ]
+}

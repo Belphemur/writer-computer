@@ -1,0 +1,232 @@
+{
+ "question": "C4: do Writer's agent overrides switch global agents off?",
+ "variants": [
+  {
+   "variant": "baseline: Writer's file leaves global agents alone",
+   "agents": {
+    "writer": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "build": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "general": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    },
+    "explore": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    },
+    "compaction": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "title": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "summary": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "plan": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "g-prim": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "g-sub": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    },
+    "md-sub": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    }
+   },
+   "foreign_listed_and_enabled": [
+    "g-prim",
+    "g-sub",
+    "md-sub"
+   ],
+   "builtin_enabled": [
+    "build",
+    "explore",
+    "general",
+    "plan",
+    "title"
+   ],
+   "names_in_model_request": [
+    "g-sub",
+    "md-sub"
+   ],
+   "session_on_g-prim": {
+    "created": true,
+    "turn": "session.execution.succeeded",
+    "system_mentions_g-prim": true
+   }
+  },
+  {
+   "variant": "partial {disabled:true} for g-prim, g-sub, md-sub",
+   "agents": {
+    "writer": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "build": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "general": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    },
+    "explore": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    },
+    "compaction": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "title": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "summary": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "plan": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    }
+   },
+   "foreign_listed_and_enabled": [],
+   "builtin_enabled": [
+    "build",
+    "explore",
+    "general",
+    "plan",
+    "title"
+   ],
+   "names_in_model_request": [],
+   "session_on_g-prim": {
+    "created": true,
+    "turn": "session.execution.failed",
+    "system_mentions_g-prim": false
+   }
+  },
+  {
+   "variant": "full definition + disabled:true",
+   "agents": {
+    "writer": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "build": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "general": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    },
+    "explore": {
+     "mode": "subagent",
+     "disabled": false,
+     "hidden": false
+    },
+    "compaction": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "title": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "summary": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "plan": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    }
+   },
+   "foreign_listed_and_enabled": [],
+   "builtin_enabled": [
+    "build",
+    "explore",
+    "general",
+    "plan",
+    "title"
+   ],
+   "names_in_model_request": [],
+   "session_on_g-prim": {
+    "created": true,
+    "turn": "session.execution.failed",
+    "system_mentions_g-prim": false
+   }
+  },
+  {
+   "variant": "built-ins disabled too (as Writer does today), partial for foreign",
+   "agents": {
+    "writer": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": false
+    },
+    "compaction": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    },
+    "summary": {
+     "mode": "primary",
+     "disabled": false,
+     "hidden": true
+    }
+   },
+   "foreign_listed_and_enabled": [],
+   "builtin_enabled": [],
+   "names_in_model_request": [],
+   "session_on_g-prim": {
+    "created": true,
+    "turn": "session.execution.failed",
+    "system_mentions_g-prim": false
+   }
+  }
+ ]
+}

@@ -1,0 +1,315 @@
+{
+ "question": "C3: does rewrite + /api/location/reload start and stop servers? and /connect, /disconnect?",
+ "runs": [
+  {
+   "mode": "policies",
+   "steps": [
+    {
+     "step": "start: both global servers off",
+     "status": {
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     }
+    },
+    {
+     "step": "rewrite: g-a on, POST /api/location/reload",
+     "result": 204,
+     "status": {
+      "g-a": "connected",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 1,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 1,
+      "g-b": 0,
+      "writer": 2
+     }
+    },
+    {
+     "step": "rewrite: g-a and g-b on, reload",
+     "result": 204,
+     "status": {
+      "g-a": "connected",
+      "g-b": "connected",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 1,
+      "g-b": 1,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 1,
+      "writer": 3
+     }
+    },
+    {
+     "step": "rewrite: g-a off again, reload",
+     "result": 204,
+     "status": {
+      "g-b": "connected",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 1,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 4
+     }
+    },
+    {
+     "step": "rewrite: both off, reload",
+     "result": 204,
+     "status": {
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 5
+     }
+    },
+    {
+     "step": "POST /api/experimental/mcp/g-a/connect on a switched-off server",
+     "result": 404,
+     "status": {
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 5
+     }
+    },
+    {
+     "step": "POST /api/experimental/mcp/g-a/disconnect",
+     "result": 404,
+     "status": {
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 5
+     }
+    },
+    {
+     "step": "reload after the explicit connect/disconnect (does the lever come back?)",
+     "result": 204,
+     "status": {
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 6
+     }
+    }
+   ],
+   "session_survives_reload": true,
+   "turn_after_all": "session.execution.succeeded",
+   "offered_catalog_servers": [
+    "writer"
+   ]
+  },
+  {
+   "mode": "placeholders",
+   "steps": [
+    {
+     "step": "start: both global servers off",
+     "status": {
+      "g-a": "disabled",
+      "g-b": "disabled",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     }
+    },
+    {
+     "step": "rewrite: g-a on, POST /api/location/reload",
+     "result": 204,
+     "status": {
+      "g-a": "connected",
+      "g-b": "disabled",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 1,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 1,
+      "g-b": 0,
+      "writer": 2
+     }
+    },
+    {
+     "step": "rewrite: g-a and g-b on, reload",
+     "result": 204,
+     "status": {
+      "g-a": "connected",
+      "g-b": "connected",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 1,
+      "g-b": 1,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 1,
+      "writer": 3
+     }
+    },
+    {
+     "step": "rewrite: g-a off again, reload",
+     "result": 204,
+     "status": {
+      "g-a": "disabled",
+      "g-b": "connected",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 1,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 4
+     }
+    },
+    {
+     "step": "rewrite: both off, reload",
+     "result": 204,
+     "status": {
+      "g-a": "disabled",
+      "g-b": "disabled",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 5
+     }
+    },
+    {
+     "step": "POST /api/experimental/mcp/g-a/connect on a switched-off server",
+     "result": 204,
+     "status": {
+      "g-a": "failed",
+      "g-b": "disabled",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 5
+     }
+    },
+    {
+     "step": "POST /api/experimental/mcp/g-a/disconnect",
+     "result": 204,
+     "status": {
+      "g-a": "disabled",
+      "g-b": "disabled",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 5
+     }
+    },
+    {
+     "step": "reload after the explicit connect/disconnect (does the lever come back?)",
+     "result": 204,
+     "status": {
+      "g-a": "disabled",
+      "g-b": "disabled",
+      "writer": "connected"
+     },
+     "live_processes": {
+      "g-a": 0,
+      "g-b": 0,
+      "writer": 1
+     },
+     "spawn_events": {
+      "g-a": 2,
+      "g-b": 2,
+      "writer": 6
+     }
+    }
+   ],
+   "session_survives_reload": true,
+   "turn_after_all": "session.execution.succeeded",
+   "offered_catalog_servers": [
+    "writer"
+   ]
+  }
+ ]
+}

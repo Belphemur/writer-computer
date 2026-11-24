@@ -1,0 +1,262 @@
+{
+ "question": "C7: the provider lever and `auto`",
+ "variants": [
+  {
+   "variant": "P0 baseline: no lever",
+   "writer_config_extra": null,
+   "providers": {
+    "opencode": "enabled",
+    "amazon-bedrock": "enabled",
+    "fake-a": "enabled",
+    "fake-b": "enabled"
+   },
+   "models": {
+    "opencode": {
+     "count": 10,
+     "enabled": 10,
+     "disabled": 0
+    },
+    "amazon-bedrock": {
+     "count": 166,
+     "enabled": 166,
+     "disabled": 0
+    },
+    "fake-a": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ],
+    "fake-b": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ]
+   },
+   "turn_on_fake-a": {
+    "prompt_http": 200,
+    "end": "session.execution.succeeded",
+    "error_type": null,
+    "requests_reached_recorder": 2
+   },
+   "turn_on_fake-b": {
+    "prompt_http": 200,
+    "end": "session.execution.succeeded",
+    "error_type": null,
+    "requests_reached_recorder": 2
+   },
+   "model_default_http": 200
+  },
+  {
+   "variant": "P1 policies [provider.use fake-b deny]",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "provider.use",
+      "resource": "fake-b",
+      "effect": "deny"
+     }
+    ]
+   },
+   "providers": {
+    "opencode": "enabled",
+    "amazon-bedrock": "enabled",
+    "fake-a": "enabled"
+   },
+   "models": {
+    "opencode": {
+     "count": 10,
+     "enabled": 10,
+     "disabled": 0
+    },
+    "amazon-bedrock": {
+     "count": 166,
+     "enabled": 166,
+     "disabled": 0
+    },
+    "fake-a": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ]
+   },
+   "turn_on_fake-a": {
+    "prompt_http": 200,
+    "end": "session.execution.succeeded",
+    "error_type": null,
+    "requests_reached_recorder": 2
+   },
+   "turn_on_fake-b": {
+    "prompt_http": 200,
+    "end": "session.execution.failed",
+    "error_type": "provider.no-route",
+    "requests_reached_recorder": 0
+   },
+   "model_default_http": 200
+  },
+  {
+   "variant": "P2 policies [provider.use * deny, provider.use fake-a allow]",
+   "writer_config_extra": {
+    "policies": [
+     {
+      "action": "provider.use",
+      "resource": "*",
+      "effect": "deny"
+     },
+     {
+      "action": "provider.use",
+      "resource": "fake-a",
+      "effect": "allow"
+     }
+    ]
+   },
+   "providers": {
+    "fake-a": "enabled"
+   },
+   "models": {
+    "fake-a": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ]
+   },
+   "turn_on_fake-a": {
+    "prompt_http": 200,
+    "end": "session.execution.succeeded",
+    "error_type": null,
+    "requests_reached_recorder": 2
+   },
+   "turn_on_fake-b": {
+    "prompt_http": 200,
+    "end": "session.execution.failed",
+    "error_type": "provider.no-route",
+    "requests_reached_recorder": 0
+   },
+   "model_default_http": 200
+  },
+  {
+   "variant": "P3 partial providers.fake-b.models.fake-model.disabled:true",
+   "writer_config_extra": {
+    "providers": {
+     "fake-b": {
+      "models": {
+       "fake-model": {
+        "disabled": true
+       }
+      }
+     }
+    }
+   },
+   "providers": {
+    "opencode": "enabled",
+    "amazon-bedrock": "enabled",
+    "fake-a": "enabled",
+    "fake-b": "enabled"
+   },
+   "models": {
+    "opencode": {
+     "count": 10,
+     "enabled": 10,
+     "disabled": 0
+    },
+    "amazon-bedrock": {
+     "count": 166,
+     "enabled": 166,
+     "disabled": 0
+    },
+    "fake-a": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ]
+   },
+   "turn_on_fake-a": {
+    "prompt_http": 200,
+    "end": "session.execution.succeeded",
+    "error_type": null,
+    "requests_reached_recorder": 2
+   },
+   "turn_on_fake-b": {
+    "prompt_http": 200,
+    "end": "session.execution.failed",
+    "error_type": "provider.no-route",
+    "requests_reached_recorder": 0
+   },
+   "model_default_http": 200
+  },
+  {
+   "variant": "P4 `auto`: providers with an env list, variable unset (fake-c) and set (fake-d)",
+   "writer_config_extra": null,
+   "providers": {
+    "opencode": "enabled",
+    "amazon-bedrock": "enabled",
+    "fake-a": "enabled",
+    "fake-b": "enabled",
+    "fake-c": "enabled",
+    "fake-d": "enabled"
+   },
+   "models": {
+    "opencode": {
+     "count": 10,
+     "enabled": 10,
+     "disabled": 0
+    },
+    "amazon-bedrock": {
+     "count": 166,
+     "enabled": 166,
+     "disabled": 0
+    },
+    "fake-a": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ],
+    "fake-b": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ],
+    "fake-c": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ],
+    "fake-d": [
+     {
+      "id": "fake-model",
+      "enabled": true,
+      "status": "active"
+     }
+    ]
+   },
+   "turn_on_fake-a": {
+    "prompt_http": 200,
+    "end": "session.execution.succeeded",
+    "error_type": null,
+    "requests_reached_recorder": 2
+   },
+   "turn_on_fake-b": {
+    "prompt_http": 200,
+    "end": "session.execution.succeeded",
+    "error_type": null,
+    "requests_reached_recorder": 2
+   },
+   "model_default_http": 200
+  }
+ ]
+}

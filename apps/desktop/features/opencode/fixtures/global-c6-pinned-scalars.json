@@ -1,0 +1,39 @@
+{
+ "question": "C6: global scalars and arrays against Writer's pins",
+ "variants": [
+  {
+   "variant": "global config alone (Writer pins nothing)",
+   "agent_of_session_created_with_none": "g-prim",
+   "model_default": {
+    "id": "fake-model",
+    "providerID": "fake-a"
+   },
+   "automation_list_http": 200,
+   "skills": [
+    "g-skill"
+   ],
+   "automation_namespace_in_catalog": true,
+   "instruction_marks_in_request": [
+    "GLOBALMARK"
+   ]
+  },
+  {
+   "variant": "Writer pins its scalars and arrays",
+   "agent_of_session_created_with_none": "writer",
+   "model_default": {
+    "id": "other",
+    "providerID": "fake-b"
+   },
+   "automation_list_http": 200,
+   "skills": [
+    "g-skill",
+    "w-skill"
+   ],
+   "automation_namespace_in_catalog": false,
+   "instruction_marks_in_request": [
+    "GLOBALMARK",
+    "WRITERMARK"
+   ]
+  }
+ ]
+}

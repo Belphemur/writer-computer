@@ -1,0 +1,561 @@
+{
+ "question": "K2: --disallowedTools on an MCP server",
+ "claude_version": "2.1.330 (Claude Code)",
+ "variants": [
+  {
+   "variant": "A baseline: --mcp-config probe",
+   "flags": [],
+   "exit": 0,
+   "seconds": 0.27,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "B --disallowedTools 'mcp__probe__*'",
+   "flags": [
+    "--disallowedTools",
+    "mcp__probe__*"
+   ],
+   "exit": 0,
+   "seconds": 0.29,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "C --disallowedTools mcp__probe (server form)",
+   "flags": [
+    "--disallowedTools",
+    "mcp__probe"
+   ],
+   "exit": 0,
+   "seconds": 0.29,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "D --disallowedTools mcp__probe__note_count (one tool)",
+   "flags": [
+    "--disallowedTools",
+    "mcp__probe__note_count"
+   ],
+   "exit": 0,
+   "seconds": 0.3,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "E --strict-mcp-config with an empty --mcp-config, the server only in the user config",
+   "flags": [
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{}"
+   ],
+   "exit": 1,
+   "seconds": 0.17,
+   "spawned": [],
+   "initialized": [],
+   "tools_called_on_server": {},
+   "requests": [],
+   "permission_denials": [],
+   "is_error": null
+  },
+  {
+   "variant": "U server in the user config, --disallowedTools 'mcp__usr__*'",
+   "flags": [
+    "--disallowedTools",
+    "mcp__usr__*"
+   ],
+   "exit": 0,
+   "seconds": 0.3,
+   "spawned": [
+    "usr"
+   ],
+   "initialized": [
+    "usr"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "U0 server in the user config, no flag",
+   "flags": [],
+   "exit": 0,
+   "seconds": 0.3,
+   "spawned": [
+    "usr"
+   ],
+   "initialized": [
+    "usr"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__usr__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "F the model calls the tool anyway, allowed by --allowedTools",
+   "flags": [
+    "--allowedTools",
+    "mcp__probe__*"
+   ],
+   "exit": 0,
+   "seconds": 0.31,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {
+    "probe": [
+     "note_count"
+    ]
+   },
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": true
+    },
+    {
+     "last_tool_result": "[{\"type\": \"text\", \"text\": \"The fake vault holds 42 notes.\"}]",
+     "n": 2,
+     "n_messages": 4,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "G the model calls the tool anyway, allowed AND disallowed (deny vs allow)",
+   "flags": [
+    "--allowedTools",
+    "mcp__probe__*",
+    "--disallowedTools",
+    "mcp__probe__*"
+   ],
+   "exit": 0,
+   "seconds": 0.3,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": true
+    },
+    {
+     "last_tool_result": "<tool_use_error>Error: No such tool available: mcp__probe__note_count</tool_use_error>",
+     "n": 2,
+     "n_messages": 4,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "H0 sub-agent launched, no deny",
+   "flags": [
+    "--allowedTools",
+    "Agent"
+   ],
+   "exit": 0,
+   "seconds": 0.43,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": true
+    },
+    {
+     "last_tool_result": "[{\"type\": \"text\", \"text\": \"Async agent launched successfully. (This tool result is internal metadata \\u2014 never quote or paste any part of it, including the a",
+     "n": 2,
+     "n_messages": 4,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    },
+    {
+     "last_tool_result": null,
+     "n": 3,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    },
+    {
+     "last_tool_result": null,
+     "n": 4,
+     "n_messages": 6,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__probe__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "H1 sub-agent launched, --disallowedTools 'mcp__probe__*'",
+   "flags": [
+    "--allowedTools",
+    "Agent",
+    "--disallowedTools",
+    "mcp__probe__*"
+   ],
+   "exit": 0,
+   "seconds": 0.43,
+   "spawned": [
+    "probe"
+   ],
+   "initialized": [
+    "probe"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": true
+    },
+    {
+     "last_tool_result": "[{\"type\": \"text\", \"text\": \"Async agent launched successfully. (This tool result is internal metadata \\u2014 never quote or paste any part of it, including the a",
+     "n": 2,
+     "n_messages": 4,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": false
+    },
+    {
+     "last_tool_result": null,
+     "n": 3,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": false
+    },
+    {
+     "last_tool_result": null,
+     "n": 4,
+     "n_messages": 6,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "N names: servers called my.srv, my srv, my:srv, UPPER_case-1, claude.ai Atlassian",
+   "flags": [],
+   "exit": 0,
+   "seconds": 0.34,
+   "spawned": [
+    "UPPER_case-1",
+    "claude.ai Atlassian",
+    "my srv",
+    "my.srv",
+    "my:srv"
+   ],
+   "initialized": [
+    "UPPER_case-1",
+    "claude.ai Atlassian",
+    "my srv",
+    "my.srv",
+    "my:srv"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__UPPER_case-1__note_count",
+      "mcp__claude_ai_Atlassian__note_count",
+      "mcp__my_srv__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "N2 --disallowedTools 'mcp__my_srv__*' against my.srv, my srv and my:srv (the normalised prefix)",
+   "flags": [
+    "--disallowedTools",
+    "mcp__my_srv__*"
+   ],
+   "exit": 0,
+   "seconds": 0.34,
+   "spawned": [
+    "UPPER_case-1",
+    "claude.ai Atlassian",
+    "my srv",
+    "my.srv",
+    "my:srv"
+   ],
+   "initialized": [
+    "UPPER_case-1",
+    "claude.ai Atlassian",
+    "my srv",
+    "my.srv",
+    "my:srv"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__UPPER_case-1__note_count",
+      "mcp__claude_ai_Atlassian__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  },
+  {
+   "variant": "N3 --disallowedTools 'mcp__my.srv__*' (the raw name)",
+   "flags": [
+    "--disallowedTools",
+    "mcp__my.srv__*"
+   ],
+   "exit": 0,
+   "seconds": 0.33,
+   "spawned": [
+    "UPPER_case-1",
+    "claude.ai Atlassian",
+    "my srv",
+    "my.srv",
+    "my:srv"
+   ],
+   "initialized": [
+    "UPPER_case-1",
+    "claude.ai Atlassian",
+    "my srv",
+    "my.srv",
+    "my:srv"
+   ],
+   "tools_called_on_server": {},
+   "requests": [
+    {
+     "last_tool_result": null,
+     "n": 1,
+     "n_messages": 2,
+     "tools_array_mcp": [],
+     "mcp_names_in_body": [
+      "mcp__UPPER_case-1__note_count",
+      "mcp__claude_ai_Atlassian__note_count",
+      "mcp__my_srv__note_count"
+     ],
+     "has_agent_tool": true,
+     "fired": false
+    }
+   ],
+   "permission_denials": [],
+   "is_error": false
+  }
+ ],
+ "names": {
+  "variant": "N names: servers called my.srv, my srv, my:srv, UPPER_case-1, claude.ai Atlassian",
+  "flags": [],
+  "exit": 0,
+  "seconds": 0.34,
+  "spawned": [
+   "UPPER_case-1",
+   "claude.ai Atlassian",
+   "my srv",
+   "my.srv",
+   "my:srv"
+  ],
+  "initialized": [
+   "UPPER_case-1",
+   "claude.ai Atlassian",
+   "my srv",
+   "my.srv",
+   "my:srv"
+  ],
+  "tools_called_on_server": {},
+  "requests": [
+   {
+    "last_tool_result": null,
+    "n": 1,
+    "n_messages": 2,
+    "tools_array_mcp": [],
+    "mcp_names_in_body": [
+     "mcp__UPPER_case-1__note_count",
+     "mcp__claude_ai_Atlassian__note_count",
+     "mcp__my_srv__note_count"
+    ],
+    "has_agent_tool": true,
+    "fired": false
+   }
+  ],
+  "permission_denials": [],
+  "is_error": false
+ }
+}

@@ -1,0 +1,331 @@
+{
+ "question": "C8: server names with `.`, space and `:`",
+ "names": [
+  {
+   "server": "my-srv",
+   "codemode_false": {
+    "mcp_names": [
+     "my-srv"
+    ],
+    "mcp_status": [
+     "connected"
+    ],
+    "offered_tools_with_note_count": [
+     "my-srv_note_count"
+    ],
+    "catalog_entry": null,
+    "asked": [
+     {
+      "action": "my-srv_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "turn": "session.execution.succeeded",
+    "marker_tools_called": [
+     "note_count"
+    ]
+   },
+   "codemode_catalog": {
+    "mcp_names": [
+     "my-srv"
+    ],
+    "catalog_entry": {
+     "server_line": "my-srv",
+     "first_tool": "tools[\\\"my-srv\\\"].note_count"
+    }
+   },
+   "codemode_scripted_call": {
+    "code": "const r = await tools[\\\"my-srv\\\"].note_count(); return r;",
+    "asked": [],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "SyntaxError: Expecting Unicode escape sequence \\uXXXX. Code must be plain JavaScript written as a program body. (line 1, col 24)"
+      }
+     ]
+    ],
+    "marker_tools_called": [],
+    "turn": "session.execution.succeeded"
+   }
+  },
+  {
+   "server": "my.srv",
+   "codemode_false": {
+    "mcp_names": [
+     "my.srv"
+    ],
+    "mcp_status": [
+     "connected"
+    ],
+    "offered_tools_with_note_count": [
+     "my_srv_note_count"
+    ],
+    "catalog_entry": null,
+    "asked": [
+     {
+      "action": "my_srv_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "turn": "session.execution.succeeded",
+    "marker_tools_called": [
+     "note_count"
+    ]
+   },
+   "codemode_catalog": {
+    "mcp_names": [
+     "my.srv"
+    ],
+    "catalog_entry": {
+     "server_line": "my_srv",
+     "first_tool": "tools.my_srv.note_count"
+    }
+   },
+   "codemode_scripted_call": {
+    "code": "const r = await tools.my_srv.note_count(); return r;",
+    "asked": [
+     {
+      "action": "my_srv_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "marker_tools_called": [
+     "note_count"
+    ],
+    "turn": "session.execution.succeeded"
+   }
+  },
+  {
+   "server": "my srv",
+   "codemode_false": {
+    "mcp_names": [
+     "my srv"
+    ],
+    "mcp_status": [
+     "connected"
+    ],
+    "offered_tools_with_note_count": [
+     "my_srv_note_count"
+    ],
+    "catalog_entry": null,
+    "asked": [
+     {
+      "action": "my_srv_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "turn": "session.execution.succeeded",
+    "marker_tools_called": [
+     "note_count"
+    ]
+   },
+   "codemode_catalog": {
+    "mcp_names": [
+     "my srv"
+    ],
+    "catalog_entry": {
+     "server_line": "my_srv",
+     "first_tool": "tools.my_srv.note_count"
+    }
+   },
+   "codemode_scripted_call": {
+    "code": "const r = await tools.my_srv.note_count(); return r;",
+    "asked": [
+     {
+      "action": "my_srv_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "marker_tools_called": [
+     "note_count"
+    ],
+    "turn": "session.execution.succeeded"
+   }
+  },
+  {
+   "server": "my:srv",
+   "codemode_false": {
+    "mcp_names": [
+     "my:srv"
+    ],
+    "mcp_status": [
+     "connected"
+    ],
+    "offered_tools_with_note_count": [
+     "my_srv_note_count"
+    ],
+    "catalog_entry": null,
+    "asked": [
+     {
+      "action": "my_srv_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "turn": "session.execution.succeeded",
+    "marker_tools_called": [
+     "note_count"
+    ]
+   },
+   "codemode_catalog": {
+    "mcp_names": [
+     "my:srv"
+    ],
+    "catalog_entry": {
+     "server_line": "my_srv",
+     "first_tool": "tools.my_srv.note_count"
+    }
+   },
+   "codemode_scripted_call": {
+    "code": "const r = await tools.my_srv.note_count(); return r;",
+    "asked": [
+     {
+      "action": "my_srv_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "marker_tools_called": [
+     "note_count"
+    ],
+    "turn": "session.execution.succeeded"
+   }
+  },
+  {
+   "server": "My_Srv2",
+   "codemode_false": {
+    "mcp_names": [
+     "My_Srv2"
+    ],
+    "mcp_status": [
+     "connected"
+    ],
+    "offered_tools_with_note_count": [
+     "My_Srv2_note_count"
+    ],
+    "catalog_entry": null,
+    "asked": [
+     {
+      "action": "My_Srv2_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "turn": "session.execution.succeeded",
+    "marker_tools_called": [
+     "note_count"
+    ]
+   },
+   "codemode_catalog": {
+    "mcp_names": [
+     "My_Srv2"
+    ],
+    "catalog_entry": {
+     "server_line": "My_Srv2",
+     "first_tool": "tools.My_Srv2.note_count"
+    }
+   },
+   "codemode_scripted_call": {
+    "code": "const r = await tools.My_Srv2.note_count(); return r;",
+    "asked": [
+     {
+      "action": "My_Srv2_note_count",
+      "resources": [
+       "*"
+      ]
+     }
+    ],
+    "tool_results": [
+     [
+      {
+       "type": "text",
+       "text": "The fake vault holds 42 notes."
+      }
+     ]
+    ],
+    "marker_tools_called": [
+     "note_count"
+    ],
+    "turn": "session.execution.succeeded"
+   }
+  }
+ ]
+}

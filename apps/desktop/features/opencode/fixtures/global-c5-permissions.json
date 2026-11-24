@@ -1,0 +1,368 @@
+{
+ "question": "C5: how do global permissions combine with Writer's?",
+ "variants": [
+  {
+   "variant": "V0 no global permissions",
+   "global": {},
+   "global_agents": null,
+   "writer_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    }
+   ],
+   "writer_agent_permissions": [
+    {
+     "action": "read",
+     "resource": "*",
+     "effect": "allow"
+    }
+   ],
+   "resolved_writer_permissions": [
+    "*:*:allow",
+    "read:*.env:ask",
+    "read:*.env.*:ask",
+    "read:*.env.example:allow",
+    "*:*:ask",
+    "read:*:allow",
+    "browser:*:deny",
+    "skill:browser:deny"
+   ],
+   "edit_asked": true,
+   "asked_actions": [
+    "edit"
+   ],
+   "a.txt_after": "alpha",
+   "turn": "session.execution.interrupted"
+  },
+  {
+   "variant": "V1 global permissions [edit allow, shell allow]",
+   "global": {
+    "permissions": [
+     {
+      "action": "edit",
+      "resource": "*",
+      "effect": "allow"
+     },
+     {
+      "action": "shell",
+      "resource": "*",
+      "effect": "allow"
+     }
+    ]
+   },
+   "global_agents": null,
+   "writer_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    }
+   ],
+   "writer_agent_permissions": [
+    {
+     "action": "read",
+     "resource": "*",
+     "effect": "allow"
+    }
+   ],
+   "resolved_writer_permissions": [
+    "*:*:allow",
+    "read:*.env:ask",
+    "read:*.env.*:ask",
+    "read:*.env.example:allow",
+    "edit:*:allow",
+    "shell:*:allow",
+    "*:*:ask",
+    "read:*:allow",
+    "browser:*:deny",
+    "skill:browser:deny"
+   ],
+   "edit_asked": true,
+   "asked_actions": [
+    "edit"
+   ],
+   "a.txt_after": "alpha",
+   "turn": "session.execution.interrupted"
+  },
+  {
+   "variant": "V2 global permissions as V1 + global agent `writer` permissions [edit allow]",
+   "global": {
+    "permissions": [
+     {
+      "action": "edit",
+      "resource": "*",
+      "effect": "allow"
+     },
+     {
+      "action": "shell",
+      "resource": "*",
+      "effect": "allow"
+     }
+    ]
+   },
+   "global_agents": {
+    "writer": {
+     "mode": "primary",
+     "description": "global writer",
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "allow"
+      }
+     ]
+    }
+   },
+   "writer_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    }
+   ],
+   "writer_agent_permissions": [
+    {
+     "action": "read",
+     "resource": "*",
+     "effect": "allow"
+    }
+   ],
+   "resolved_writer_permissions": [
+    "*:*:allow",
+    "read:*.env:ask",
+    "read:*.env.*:ask",
+    "read:*.env.example:allow",
+    "edit:*:allow",
+    "shell:*:allow",
+    "*:*:ask",
+    "edit:*:allow",
+    "read:*:allow",
+    "browser:*:deny",
+    "skill:browser:deny"
+   ],
+   "edit_asked": false,
+   "asked_actions": [],
+   "a.txt_after": "gamma",
+   "turn": "session.execution.succeeded"
+  },
+  {
+   "variant": "V3 as V1, Writer's agent list starts with *:ask",
+   "global": {
+    "permissions": [
+     {
+      "action": "edit",
+      "resource": "*",
+      "effect": "allow"
+     },
+     {
+      "action": "shell",
+      "resource": "*",
+      "effect": "allow"
+     }
+    ]
+   },
+   "global_agents": null,
+   "writer_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    }
+   ],
+   "writer_agent_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    },
+    {
+     "action": "read",
+     "resource": "*",
+     "effect": "allow"
+    }
+   ],
+   "resolved_writer_permissions": [
+    "*:*:allow",
+    "read:*.env:ask",
+    "read:*.env.*:ask",
+    "read:*.env.example:allow",
+    "edit:*:allow",
+    "shell:*:allow",
+    "*:*:ask",
+    "*:*:ask",
+    "read:*:allow",
+    "browser:*:deny",
+    "skill:browser:deny"
+   ],
+   "edit_asked": true,
+   "asked_actions": [
+    "edit"
+   ],
+   "a.txt_after": "alpha",
+   "turn": "session.execution.interrupted"
+  },
+  {
+   "variant": "V6 as V2, but Writer's agent list starts with *:ask (the design's form)",
+   "global": {
+    "permissions": [
+     {
+      "action": "edit",
+      "resource": "*",
+      "effect": "allow"
+     },
+     {
+      "action": "shell",
+      "resource": "*",
+      "effect": "allow"
+     }
+    ]
+   },
+   "global_agents": {
+    "writer": {
+     "mode": "primary",
+     "description": "global writer",
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "allow"
+      }
+     ]
+    }
+   },
+   "writer_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    }
+   ],
+   "writer_agent_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    },
+    {
+     "action": "read",
+     "resource": "*",
+     "effect": "allow"
+    }
+   ],
+   "resolved_writer_permissions": [
+    "*:*:allow",
+    "read:*.env:ask",
+    "read:*.env.*:ask",
+    "read:*.env.example:allow",
+    "edit:*:allow",
+    "shell:*:allow",
+    "*:*:ask",
+    "edit:*:allow",
+    "*:*:ask",
+    "read:*:allow",
+    "browser:*:deny",
+    "skill:browser:deny"
+   ],
+   "edit_asked": true,
+   "asked_actions": [
+    "edit"
+   ],
+   "a.txt_after": "alpha",
+   "turn": "session.execution.interrupted"
+  },
+  {
+   "variant": "V4 global permissions [* allow]",
+   "global": {
+    "permissions": [
+     {
+      "action": "*",
+      "resource": "*",
+      "effect": "allow"
+     }
+    ]
+   },
+   "global_agents": null,
+   "writer_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    }
+   ],
+   "writer_agent_permissions": [
+    {
+     "action": "read",
+     "resource": "*",
+     "effect": "allow"
+    }
+   ],
+   "resolved_writer_permissions": [
+    "*:*:allow",
+    "read:*.env:ask",
+    "read:*.env.*:ask",
+    "read:*.env.example:allow",
+    "*:*:allow",
+    "*:*:ask",
+    "read:*:allow",
+    "browser:*:deny",
+    "skill:browser:deny"
+   ],
+   "edit_asked": true,
+   "asked_actions": [
+    "edit"
+   ],
+   "a.txt_after": "alpha",
+   "turn": "session.execution.interrupted"
+  },
+  {
+   "variant": "V5 global permissions [edit deny] (a user deny), Writer's agent allows edit",
+   "global": {
+    "permissions": [
+     {
+      "action": "edit",
+      "resource": "*",
+      "effect": "deny"
+     }
+    ]
+   },
+   "global_agents": null,
+   "writer_permissions": [
+    {
+     "action": "*",
+     "resource": "*",
+     "effect": "ask"
+    }
+   ],
+   "writer_agent_permissions": [
+    {
+     "action": "edit",
+     "resource": "*",
+     "effect": "allow"
+    },
+    {
+     "action": "read",
+     "resource": "*",
+     "effect": "allow"
+    }
+   ],
+   "resolved_writer_permissions": [
+    "*:*:allow",
+    "read:*.env:ask",
+    "read:*.env.*:ask",
+    "read:*.env.example:allow",
+    "edit:*:deny",
+    "*:*:ask",
+    "edit:*:allow",
+    "read:*:allow",
+    "browser:*:deny",
+    "skill:browser:deny"
+   ],
+   "edit_asked": false,
+   "asked_actions": [],
+   "a.txt_after": "gamma",
+   "turn": "session.execution.succeeded"
+  }
+ ]
+}

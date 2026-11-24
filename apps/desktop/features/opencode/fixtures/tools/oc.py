@@ -48,8 +48,19 @@ def free_port():
 
 
 class Server:
-    def __init__(self, name, cfg=None, files=None, env=None, debug=False, port0=False):
+    def __init__(self, name, cfg=None, files=None, env=None, debug=False, port0=False, global_config=None, global_files=None, attach=True):
+        """global_config: a dict written as the SYNTHETIC global config `<work>/xdg-<name>/opencode/opencode.json`
+        (XDG_CONFIG_HOME points at `<work>/xdg-<name>`; the folder must be inside the work folder or the run is
+        refused). global_files: more files under that `opencode/` folder (agents, plugins), relative paths.
+        With either, HOME and the XDG data, cache and state homes are also moved into the work folder, so
+        nothing of the user's own OpenCode setup, login or data can be read (no model login is needed: the
+        scenarios point providers at the local fake model)."""
         self.name = name
+        self.attach_on_start = attach  # False: return right after the ready line, no API call and no event stream yet (call attach())
+        self.t_launch = self.t_ready = None
+        self.global_config = global_config
+        self.global_files = global_files
+        self.isolated = global_config is not None or global_files is not None
         os.makedirs(WORK, exist_ok=True)
         self.cwd = os.path.join(WORK, "cwd-" + name)
         shutil.rmtree(self.cwd, ignore_errors=True)
@@ -79,9 +90,27 @@ class Server:
         config (`opencode.json`, `.opencode/` in the working directory) switched off. The real HOME stays so
         the login resolves; the config home is empty and recreated empty on every start."""
         env = {k: v for k, v in os.environ.items() if not k.startswith("OPENCODE_")}
-        xdg = os.path.join(WORK, "xdg-config")
+        xdg = os.path.join(WORK, f"xdg-{self.name}" if self.isolated else "xdg-config")
+        if os.path.commonpath([os.path.abspath(xdg), WORK]) != WORK:
+            raise RuntimeError("refusing a config home outside the work folder")
         shutil.rmtree(xdg, ignore_errors=True)
         os.makedirs(xdg)
+        if self.isolated:
+            cdir = os.path.join(xdg, "opencode")
+            os.makedirs(cdir)
+            if self.global_config is not None:
+                json.dump(self.global_config, open(os.path.join(cdir, "opencode.json"), "w"), indent=2)
+            for rel, text in (self.global_files or {}).items():
+                fp = os.path.abspath(os.path.join(cdir, rel))
+                if os.path.commonpath([fp, cdir]) != cdir:
+                    raise RuntimeError("global file outside the config home: " + rel)
+                os.makedirs(os.path.dirname(fp), exist_ok=True)
+                open(fp, "w").write(text)
+            home = os.path.join(WORK, f"home-{self.name}")
+            shutil.rmtree(home, ignore_errors=True)
+            for sub in ("", ".local/share", ".cache", ".local/state"):
+                os.makedirs(os.path.join(home, sub), exist_ok=True)
+            env.update(HOME=home, XDG_DATA_HOME=os.path.join(home, ".local/share"), XDG_CACHE_HOME=os.path.join(home, ".cache"), XDG_STATE_HOME=os.path.join(home, ".local/state"))
         env.update(
             OPENCODE_SERVER_PASSWORD=self.pw,
             OPENCODE_CONFIG=self.cfg_path,
@@ -105,11 +134,13 @@ class Server:
         if self.debug:
             cmd += ["--log-level", "debug", "--print-logs"]
         log = open(self.log_path, "w")
+        self.t_launch = int(time.time() * 1000)
         self.proc = subprocess.Popen(cmd, cwd=self.cwd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         try:  # anything failing from here on must not leave the server running
             t = time.time()
             while time.time() - t < 60:
                 if "server listening" in open(self.log_path).read():
+                    self.t_ready = int(time.time() * 1000)
                     if self.port0:
                         self.port = int(re.search(r"server listening on http://127\.0\.0\.1:(\d+)", open(self.log_path).read()).group(1))
                         assert self.port != 0
@@ -119,14 +150,19 @@ class Server:
                 time.sleep(0.2)
             else:
                 raise RuntimeError("server did not start")
-            threading.Thread(target=self._sse, daemon=True).start()
-            time.sleep(0.5)
-            code, r = self.api("GET", "/api/permission/saved", timeout=10)
-            self.saved_before = {x["id"] for x in (r or {}).get("data", [])}
+            if self.attach_on_start:
+                self.attach()
             return self
         except BaseException:
             self.__exit__(None, None, None)
             raise
+
+    def attach(self):
+        """Open the event stream and remember the saved permission rules that exist before the scenario."""
+        threading.Thread(target=self._sse, daemon=True).start()
+        time.sleep(0.5)
+        code, r = self.api("GET", "/api/permission/saved", timeout=10)
+        self.saved_before = {x["id"] for x in (r or {}).get("data", [])}
 
     def __exit__(self, *a):
         self._stop = True

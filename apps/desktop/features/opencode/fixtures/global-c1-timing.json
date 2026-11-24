@@ -1,0 +1,364 @@
+{
+ "question": "C1: when does a global server spawn or connect?",
+ "steps": [
+  {
+   "after": "ready line (no API call yet), settled 8 s",
+   "ms_since_launch": 8206,
+   "markers": {
+    "writer": [],
+    "g-local": [],
+    "g-remote": [],
+    "g-off": []
+   }
+  },
+  {
+   "after": "GET /api/info",
+   "ms_since_launch": 9722,
+   "markers": {
+    "writer": [],
+    "g-local": [],
+    "g-remote": [],
+    "g-off": []
+   },
+   "result": 200
+  },
+  {
+   "after": "GET /api/event (stream open only)",
+   "ms_since_launch": 12733,
+   "markers": {
+    "writer": [],
+    "g-local": [],
+    "g-remote": [],
+    "g-off": []
+   }
+  },
+  {
+   "after": "GET /api/permission/saved",
+   "ms_since_launch": 15778,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   },
+   "result": 200
+  },
+  {
+   "after": "GET /api/config",
+   "ms_since_launch": 17289,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   },
+   "result": {
+    "http": 200,
+    "documents": 3,
+    "top_level_keys": [
+     "info",
+     "path",
+     "type"
+    ]
+   }
+  },
+  {
+   "after": "GET /api/agent",
+   "ms_since_launch": 18801,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   },
+   "result": [
+    "build",
+    "compaction",
+    "explore",
+    "general",
+    "plan",
+    "summary",
+    "title",
+    "writer"
+   ]
+  },
+  {
+   "after": "GET /api/model",
+   "ms_since_launch": 20319,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   },
+   "result": 200
+  },
+  {
+   "after": "GET /api/provider",
+   "ms_since_launch": 21831,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   },
+   "result": [
+    "opencode",
+    "amazon-bedrock",
+    "fake-a"
+   ]
+  },
+  {
+   "after": "GET /api/mcp",
+   "ms_since_launch": 24838,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   },
+   "result": {
+    "status": {
+     "g-local": "connected",
+     "g-off": "disabled",
+     "g-remote": "connected",
+     "writer": "connected"
+    },
+    "ms": 3
+   }
+  },
+  {
+   "after": "POST /api/session",
+   "ms_since_launch": 28852,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   },
+   "result": "created"
+  },
+  {
+   "after": "first prompt answered by the fake model",
+   "ms_since_launch": 30179,
+   "markers": {
+    "writer": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-local": [
+     "spawn",
+     "initialize",
+     "tools/list"
+    ],
+    "g-remote": [
+     "initialize",
+     "tools/list"
+    ],
+    "g-off": []
+   }
+  }
+ ],
+ "ready_ms": 204,
+ "api_info_version": "2.4.0",
+ "permission_saved_called_at_ms": 12733,
+ "initialize_at_ms": {
+  "writer": [
+   13041
+  ],
+  "g-local": [
+   13041
+  ],
+  "g-remote": [
+   13826
+  ],
+  "g-off": []
+ },
+ "mcp_after_session": {
+  "g-local": "connected",
+  "g-off": "disabled",
+  "g-remote": "connected",
+  "writer": "connected"
+ },
+ "first_prompt": {
+  "end": "session.execution.succeeded",
+  "s": 0.3
+ },
+ "mcp_after_prompt": {
+  "g-local": "connected",
+  "g-off": "disabled",
+  "g-remote": "connected",
+  "writer": "connected"
+ },
+ "offered_tools_main_request": [
+  "edit",
+  "execute",
+  "generate_image",
+  "generate_video",
+  "glob",
+  "grep",
+  "question",
+  "read",
+  "shell",
+  "skill",
+  "subagent",
+  "webfetch",
+  "websearch",
+  "write"
+ ],
+ "offered_has_codemode_execute": true,
+ "c9_version": {
+  "argv": "opencode --version",
+  "exit": 0,
+  "stdout": "opencode v2.4.0\n",
+  "stderr_empty": true,
+  "api_info_version": "2.4.0"
+ },
+ "first_touch": {
+  "GET /api/info": {
+   "http": 200,
+   "spawned_within_6s": [],
+   "remote_initialized": false
+  },
+  "GET /api/event (stream only)": {
+   "http": null,
+   "spawned_within_6s": [],
+   "remote_initialized": false
+  },
+  "GET /api/permission/saved": {
+   "http": 200,
+   "spawned_within_6s": [
+    "g-local",
+    "writer"
+   ],
+   "remote_initialized": true
+  },
+  "GET /api/config": {
+   "http": 200,
+   "spawned_within_6s": [
+    "g-local",
+    "writer"
+   ],
+   "remote_initialized": true
+  },
+  "GET /api/agent": {
+   "http": 200,
+   "spawned_within_6s": [
+    "g-local",
+    "writer"
+   ],
+   "remote_initialized": true
+  },
+  "GET /api/model": {
+   "http": 200,
+   "spawned_within_6s": [
+    "g-local",
+    "writer"
+   ],
+   "remote_initialized": true
+  },
+  "GET /api/provider": {
+   "http": 200,
+   "spawned_within_6s": [
+    "g-local",
+    "writer"
+   ],
+   "remote_initialized": true
+  },
+  "GET /api/mcp": {
+   "http": 200,
+   "spawned_within_6s": [
+    "g-local",
+    "writer"
+   ],
+   "remote_initialized": true
+  },
+  "POST /api/session": {
+   "http": 200,
+   "spawned_within_6s": [],
+   "remote_initialized": false,
+   "spawned_within_8s_of_first_prompt": [
+    "g-local",
+    "writer"
+   ]
+  }
+ }
+}
