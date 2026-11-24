@@ -4,9 +4,10 @@
 
 - Git: a same-size edit saved in the same second as a commit of other files could vanish from the changes list; the index now marks such entries for a content check.
 - OpenCode (feature): a second agent backend. Pick it per chat when `opencode` 2.4 or newer is installed and signed in, with the default under Settings > Agent > Default agent. Writer runs OpenCode with its own config, so your global OpenCode config, plugins and MCP servers do not apply. [Use OpenCode in Writer](https://writer.computer/docs/use-opencode/).
-- OpenCode: Settings > Agent > OpenCode has a models table (All, Enabled, Free, search, prices) where you switch models off, the tier models, and the saved permission rules of the vault's project. Reasoning effort shows in the chat's model chip.
-- OpenCode: Ask before edit, Auto-edit files and Plan only. Plan only is read-only: it can look things up on the web and ask questions, and it writes and runs nothing. A switch to Auto or Don't ask asks like Ask before edit.
-- OpenCode: in Auto-edit files, a worker sub-agent's edits to files inside the vault go through without a card, as with Claude. The shell approval card now says a command runs with your full account rights (and, for OpenCode, can reach its local server).
+- OpenCode: Settings > Agent > OpenCode has a models table (a tab per provider, Enabled and Free chips, search, prices) where you switch models off, the tier models, and the saved permission rules of the vault's project. Reasoning effort shows in the chat's model chip.
+- OpenCode: Ask before edit, Auto-edit files and Plan only. Plan only is read-only: it can look things up on the web and ask questions, and it writes and runs nothing. Auto behaves like Auto-edit files, and Don't ask like Ask before edit.
+- OpenCode: in Auto-edit files, a worker sub-agent's edits to files inside the vault go through without a card, as with Claude. Any edit to `.obsidian`, `.git` or outside the vault still shows a card, the chat's own included. The shell approval card now says a command runs with your full account rights (and, for OpenCode, can reach its local server).
+- Agent: a harness chip next to the model chip switches the chat's agent before the first message (shown with two or more agents ready); after it the chip is locked and offers a new chat with the other agent. The model menu has a search over about 8 models and groups them by provider when there are several.
 - OpenCode: questions show in the question card, and sub-agents show as cards and in the tray, as with Claude.
 - OpenCode: deleting a chat deletes its OpenCode session; archiving keeps it.
 - "Choose binary…" on the agent pane's not-found card now remembers the program you pick (for the chat's own agent).

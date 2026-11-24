@@ -1,4 +1,5 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useRef, type RefObject } from "react";
+import { useMenuKeyboard } from "@/hooks/use-menu-keyboard";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { AnchoredPopover } from "@/components/editor-area/anchored-popover";
 
@@ -14,8 +15,6 @@ export type RowMenuItem = {
   /** Destructive entry (archive, delete): drawn in the danger colour. */
   destructive?: boolean;
 };
-
-const ENABLED = "[role=menuitem]:not(:disabled)";
 
 /** The shared row actions menu (the history list's per-chat menu and the per-project menu of the
  *  project home and switcher), opened by a "..." button or a right click: arrow keys move, Enter picks, Esc and a click outside close it (the shared
@@ -35,22 +34,7 @@ export function RowMenu({
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const anchor = anchorRef.current;
-    bodyRef.current?.querySelector<HTMLElement>(ENABLED)?.focus();
-    return () => {
-      // back to the anchor unless focus already went somewhere else (a click outside)
-      const active = document.activeElement;
-      if (!active || active === document.body) anchor?.focus();
-    };
-  }, [anchorRef]);
-
-  const move = (delta: 1 | -1) => {
-    const entries = [...(bodyRef.current?.querySelectorAll<HTMLElement>(ENABLED) ?? [])];
-    if (entries.length === 0) return;
-    const i = entries.indexOf(document.activeElement as HTMLElement);
-    entries[(i + delta + entries.length) % entries.length]?.focus();
-  };
+  const onKeyDown = useMenuKeyboard(bodyRef, { onClose, returnFocusTo: anchorRef });
 
   return (
     <AnchoredPopover
@@ -59,17 +43,7 @@ export function RowMenu({
       role="menu"
       label={label}
       onDismiss={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          move(1);
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          move(-1);
-        } else if (e.key === "Tab") {
-          onClose();
-        }
-      }}
+      onKeyDown={onKeyDown}
     >
       <div ref={bodyRef}>
         {items.map((item) => (

@@ -1,3 +1,4 @@
+import { FilterChip } from "@/components/filter-chip";
 import type { KindChoice } from "./kind-choices";
 
 /**
@@ -16,21 +17,15 @@ export function KindChips({
 }) {
   if (choices.length === 0) return null;
   const chip = (id: string | null, label: string) => (
-    <button
+    <FilterChip
       key={id ?? "all"}
-      type="button"
       tabIndex={-1}
-      aria-pressed={selected === id}
+      pressed={selected === id}
       data-testid={`kind-chip-${id ?? "all"}`}
       onClick={() => onSelect(id)}
-      className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs transition-colors ${
-        selected === id
-          ? "bg-[var(--surface-selected)] font-medium text-[var(--text-primary)]"
-          : "text-text-muted hover:bg-[var(--item-hover-bg)]"
-      }`}
     >
       {label}
-    </button>
+    </FilterChip>
   );
   return (
     <div

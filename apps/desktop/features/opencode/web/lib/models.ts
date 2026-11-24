@@ -1,17 +1,27 @@
 /**
- * The pure side of the models table: tabs, search and the number formats. The enabled rule is the
+ * The pure side of the models table: provider tabs, the Enabled and Free chips, search and the number formats. The enabled rule is the
  * shared `isModelEnabled`: a model is enabled unless its slug is in `agent.opencode.disabled-models`,
  * the server's own switch (`available`) first.
  */
-import { isModelEnabled, type BackendModel } from "@/lib/features/agent-backends";
+import {
+  groupByProvider,
+  isModelEnabled,
+  matchesModelQuery,
+  type BackendModel,
+} from "@/lib/features/agent-backends";
 import type { OpencodeModel } from "../ipc";
 
-export type ModelTab = "all" | "enabled" | "free";
-export const MODEL_TABS: readonly { id: ModelTab; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "enabled", label: "Enabled" },
-  { id: "free", label: "Free" },
-];
+/** The providers present in the list, by the name the server reports, in alphabetical order
+ *  (the tab row of the table; the first tab, All, is not one of them). */
+export const providerTabs = (models: readonly BackendModel[]): string[] =>
+  groupByProvider(models).map((g) => g.provider);
+
+/** The selected provider when the list still has it, else `null` (All): a refreshed list that lost
+ *  the provider falls back to All. */
+export const resolveProvider = (
+  selected: string | null,
+  providers: readonly string[],
+): string | null => (selected !== null && providers.includes(selected) ? selected : null);
 
 /** The server's row as the shared backend model (the chip, the start and this table read one). */
 export const toBackendModel = (m: OpencodeModel): BackendModel => ({
@@ -36,15 +46,23 @@ export function withEnabled(disabled: readonly string[], id: string, on: boolean
   return on ? rest : [...rest, id];
 }
 
+/** The rows of the table: the provider tab (`null` is All), the Enabled and Free chips and the
+ *  search all narrow together. */
 export function filterModels(
   models: readonly BackendModel[],
-  opts: { tab: ModelTab; query: string; disabled: readonly string[] },
+  opts: {
+    provider: string | null;
+    enabled: boolean;
+    free: boolean;
+    query: string;
+    disabled: readonly string[];
+  },
 ): BackendModel[] {
-  const q = opts.query.trim().toLowerCase();
   return models.filter((m) => {
-    if (opts.tab === "enabled" && !isModelEnabled(m, opts.disabled)) return false;
-    if (opts.tab === "free" && !m.free) return false;
-    return !q || `${m.provider ?? ""} ${m.label}`.toLowerCase().includes(q);
+    if (opts.provider !== null && m.provider !== opts.provider) return false;
+    if (opts.enabled && !isModelEnabled(m, opts.disabled)) return false;
+    if (opts.free && !m.free) return false;
+    return matchesModelQuery(m.provider, m.label, opts.query);
   });
 }
 

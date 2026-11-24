@@ -21,7 +21,8 @@ const ALLOWED = new Set([
   "src/components/editor-area/property-wikilink.tsx",
   "src/components/editor-area/property-type-control.tsx",
   "src/components/editor-area/enum-select.tsx",
-  "features/agent/web/components/row-menu.tsx",
+  // The menu keyboard hook: Tab closes a popover menu, it does not trap focus.
+  "src/hooks/use-menu-keyboard.ts",
   "features/agent/web/components/composer.tsx",
   "features/bases/web/view/expression-input.tsx",
   // The palettes' Tab selects the next kind chip; focus stays in the input.

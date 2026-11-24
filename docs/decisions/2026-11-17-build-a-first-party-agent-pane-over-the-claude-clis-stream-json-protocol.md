@@ -93,3 +93,7 @@ The permission card's "Always allow" was a pure function of the CLI's `permissio
 ## Addendum (2026-11-23): the second backend is OpenCode through its v2 server, not ACP
 
 This ADR expected a second backend to come over ACP. OpenCode comes through its v2 HTTP server and event stream instead, behind a `Transport` seam under the same `Session` state machine. See ADR 2026-11-23 "Add OpenCode as an agent backend, driven through its v2 server". ACP remains an option for Codex.
+
+## Amended 2026-11-24
+
+The pane no longer drives Claude alone, and its model chip is no longer a Claude-only list: the agent backends are a registry ([ADR 2026-11-23, OpenCode](2026-11-23-add-opencode-as-an-agent-backend-driven-through-its-v2-server.md), "Amended 2026-11-24 (later, decided with the user)"), the composer has a harness chip when two or more are usable, and one model menu serves every backend. The stream-json decision for Claude stands.

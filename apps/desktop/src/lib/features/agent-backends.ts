@@ -55,6 +55,34 @@ export interface BackendModel {
   reasoning?: boolean;
 }
 
+/** Items grouped by their provider's name, alphabetical; items with no provider are left out. The
+ *  one grouping of the models table's tabs and the model chip's menu headers. */
+export function groupByProvider<T extends { provider?: string }>(
+  items: readonly T[],
+): { provider: string; items: T[] }[] {
+  const groups = new Map<string, T[]>();
+  for (const it of items) {
+    if (!it.provider) continue;
+    const g = groups.get(it.provider);
+    if (g) g.push(it);
+    else groups.set(it.provider, [it]);
+  }
+  return [...groups]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([provider, list]) => ({ provider, items: list }));
+}
+
+/** Does the model match what was typed in a model search? Provider and name, case-insensitive,
+ *  blank matches all. The one rule of the models table and the model menu. */
+export const matchesModelQuery = (
+  provider: string | undefined,
+  name: string,
+  query: string,
+): boolean => {
+  const q = query.trim().toLowerCase();
+  return !q || `${provider ?? ""} ${name}`.toLowerCase().includes(q);
+};
+
 /** A list setting as strings (a value that is not a list is empty). One reader for every place a
  *  backend's list settings are read. */
 export const stringList = (value: unknown): string[] =>

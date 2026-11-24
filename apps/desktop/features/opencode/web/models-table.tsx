@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { FilterChip } from "@/components/filter-chip";
+import { useRovingTablist } from "@/hooks/use-roving-tablist";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Brain01Icon,
@@ -14,9 +16,9 @@ import {
   filterModels,
   formatContext,
   formatCost,
-  MODEL_TABS,
+  providerTabs,
+  resolveProvider,
   withEnabled,
-  type ModelTab,
 } from "./lib/models";
 
 /** Rows drawn before "Show more": the list is long (hundreds), one page scroll holds it. */
@@ -84,8 +86,9 @@ function Row({
   );
 }
 
-/** The model list of OpenCode's server: All, Enabled and Free tabs, a search over provider and
- *  name, and an Enabled switch per model that writes `agent.opencode.disabled-models`. */
+/** The model list of OpenCode's server: an All tab and one per provider, Enabled and Free chips and
+ *  a search over provider and name (all combine), and an Enabled switch per model that writes
+ *  `agent.opencode.disabled-models`. */
 export function ModelsTable({
   models,
   disabled,
@@ -95,32 +98,76 @@ export function ModelsTable({
   disabled: readonly string[];
   onChange: (next: string[]) => void;
 }) {
-  const [tab, setTab] = useState<ModelTab>("all");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [enabledOnly, setEnabledOnly] = useState(false);
+  const [freeOnly, setFreeOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PAGE);
-  const rows = filterModels(models, { tab, query, disabled });
+  const providers = providerTabs(models);
+  const provider = resolveProvider(selected, providers);
+  const rows = filterModels(models, {
+    provider,
+    enabled: enabledOnly,
+    free: freeOnly,
+    query,
+    disabled,
+  });
+  const narrow = (apply: () => void) => {
+    apply();
+    setShown(PAGE);
+  };
+  const tabs: { id: string; provider: string | null; label: string }[] = [
+    { id: "all", provider: null, label: "All" },
+    ...providers.map((p) => ({ id: `provider:${p}`, provider: p, label: p })),
+  ];
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const onTabKeys = useRovingTablist(tabsRef, {
+    ids: tabs.map((t) => t.id),
+    selectedId: tabs.find((t) => t.provider === provider)!.id,
+    onSelect: (id) => narrow(() => setSelected(tabs.find((t) => t.id === id)!.provider)),
+  });
+  const chips = [
+    { id: "enabled", label: "Enabled", on: enabledOnly, set: setEnabledOnly },
+    { id: "free", label: "Free", on: freeOnly, set: setFreeOnly },
+  ];
   return (
     <div data-opencode-models className="border-t border-[var(--line-subtler)] px-4 py-3.5">
-      <div className="mb-2 flex items-center gap-3">
-        <div role="tablist" aria-label="Models" className="flex gap-1">
-          {MODEL_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              data-opencode-tab={t.id}
-              onClick={() => {
-                setTab(t.id);
-                setShown(PAGE);
-              }}
-              className="rounded-full px-3 py-1 text-[12.5px] text-[var(--text-secondary)] aria-selected:bg-[var(--accent)] aria-selected:text-white"
+      <div
+        ref={tabsRef}
+        role="tablist"
+        aria-label="Providers"
+        onKeyDown={onTabKeys}
+        className="mb-2 flex gap-1 overflow-x-auto"
+      >
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={provider === t.provider}
+            tabIndex={provider === t.provider ? 0 : -1}
+            data-opencode-tab={t.id}
+            onClick={() => narrow(() => setSelected(t.provider))}
+            className="shrink-0 rounded-full px-3 py-1 text-[12.5px] text-[var(--text-secondary)] aria-selected:bg-[var(--accent)] aria-selected:text-white"
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div role="group" aria-label="Filters" className="flex gap-1">
+          {chips.map((c) => (
+            <FilterChip
+              key={c.id}
+              pressed={c.on}
+              data-opencode-chip={c.id}
+              onClick={() => narrow(() => c.set(!c.on))}
             >
-              {t.label}
-            </button>
+              {c.label}
+            </FilterChip>
           ))}
         </div>
-        <label className="relative block min-w-0 flex-1">
+        <label className="relative block min-w-[140px] flex-1">
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-icon-muted)]">
             <HugeiconsIcon icon={Search01Icon} size={14} strokeWidth={1.75} aria-hidden="true" />
           </span>
@@ -129,10 +176,7 @@ export function ModelsTable({
             aria-label="Search models"
             placeholder="Search"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setShown(PAGE);
-            }}
+            onChange={(e) => narrow(() => setQuery(e.target.value))}
             className={`${INPUT} pl-8`}
           />
         </label>

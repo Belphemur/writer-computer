@@ -1,12 +1,7 @@
-import {
-  setAgentChatBackend,
-  setAgentDraft,
-  detectAgentBinary,
-} from "@features/agent/web/hooks/agent-api";
+import { setAgentDraft, detectAgentBinary } from "@features/agent/web/hooks/agent-api";
 import { useAgentBackend, useAgentBinary, useAgentChat } from "@features/agent/web/hooks/use-agent";
 import { backendOrDefault } from "@features/agent/web/lib/backends";
 import type { ChatId } from "@features/agent/web/lib/events";
-import { useUsableBackends } from "@features/agent/web/stores/backend-usability";
 import { openExternal } from "@/lib/link-activation";
 import { Button, chooseBinary } from "./error-card";
 
@@ -43,35 +38,6 @@ export function BinaryMissingCard({ backendId }: { backendId: string }) {
   );
 }
 
-/** Which agent a new chat talks to: only offered while two or more are usable (feature on, program
- *  found), so a Claude-only window has no picker. */
-export function BackendPicker({ chatId, active }: { chatId: ChatId; active: string }) {
-  const usable = useUsableBackends();
-  if (usable.length < 2) return null;
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Choose agent"
-      data-agent-backend-picker
-      className="flex gap-1.5"
-    >
-      {usable.map((b) => (
-        <button
-          key={b.id}
-          type="button"
-          role="radio"
-          aria-checked={b.id === active}
-          data-agent-backend-option={b.id}
-          onClick={() => setAgentChatBackend(chatId, b.id)}
-          className="rounded-full border border-[var(--line-subtle)] px-3 py-1 text-[12.5px] text-text-secondary hover:bg-[var(--item-hover-bg)] aria-checked:border-transparent aria-checked:bg-[var(--accent)] aria-checked:text-white"
-        >
-          {b.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function EmptyState({ chatId }: { chatId: ChatId }) {
   const chat = useAgentChat(chatId);
   const backend = backendOrDefault(chat?.backendId);
@@ -89,7 +55,6 @@ export function EmptyState({ chatId }: { chatId: ChatId }) {
           anything. Use @ to add notes or folders as context.
         </p>
       </div>
-      <BackendPicker chatId={chatId} active={backend.id} />
       {binary?.found === false && <BinaryMissingCard backendId={backend.id} />}
       <ul className="space-y-1.5" aria-label="Suggestions">
         {SUGGESTIONS.map((s) => (

@@ -33,9 +33,9 @@ export const setAgentView = (v: AgentView) => useAgentStore.getState().setView(v
 export const setAgentBackend = (b: AgentBackend) => useAgentStore.getState().setBackend(b);
 
 /** Opens the pane on a fresh chat ("Agent: new chat"). */
-export function startNewAgentChat(projectPath?: string | null) {
+export function startNewAgentChat(projectPath?: string | null, backendId?: string) {
   const s = useAgentStore.getState();
-  s.newChat(projectPath);
+  s.newChat(projectPath, backendId);
   usePaneStore.getState().setOpen(true);
 }
 /** Opens the pane on the history view ("Agent: history"). Lane 4 renders the list. */

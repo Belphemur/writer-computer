@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Settings > Agent > OpenCode: the tab the `agent.backends` point adds, its status card, the models
-// table (tabs, search, the Enabled switch writing `agent.opencode.disabled-models`), the saved
+// table (provider tabs, chips, search, the Enabled switch writing `agent.opencode.disabled-models`), the saved
 // permission rules, and the kill switch taking all of it away.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -244,33 +244,95 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
       expect(rows()).toHaveLength(4);
     });
 
-    it("tabs All, Enabled and Free, and a search over name and provider", async () => {
+    const tab = (name: string) => q(`[data-opencode-tab='${name}']`) as HTMLButtonElement;
+    const chip = (id: string) => q(`[data-opencode-chip=${id}]`) as HTMLButtonElement;
+    const type = async (value: string) => {
+      const search = q("input[aria-label='Search models']") as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          search,
+          value,
+        );
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+
+    it("has All first, then a tab per provider from the list", async () => {
       await openTab();
-      const tab = (id: string) => q(`[data-opencode-tab=${id}]`)!;
-      await act(async () => tab("free").click());
+      expect(qa("[data-opencode-tab]").map((t) => t.textContent)).toEqual([
+        "All",
+        "Acme AI",
+        "Zed Labs",
+      ]);
+      expect(tab("all").getAttribute("aria-selected")).toBe("true");
+      await act(async () => tab("provider:Zed Labs").click());
+      expect(rows()).toEqual(["zed/free-1", "zed/retired-1"]);
+      expect(tab("provider:Zed Labs").getAttribute("aria-selected")).toBe("true");
+    });
+
+    it("the provider tabs are a roving tablist: ArrowRight moves to the next tab and selects it", async () => {
+      await openTab();
+      expect(tab("all").tabIndex).toBe(0);
+      expect(tab("provider:Acme AI").tabIndex).toBe(-1);
+      const arrow = async (key: string) =>
+        act(async () => {
+          document.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+          );
+        });
+      tab("all").focus();
+      await arrow("ArrowRight");
+      expect(tab("provider:Acme AI").getAttribute("aria-selected")).toBe("true");
+      expect(document.activeElement).toBe(tab("provider:Acme AI"));
+      expect(rows()).toEqual(["acme/big-1", "acme/small-1"]);
+      await arrow("ArrowRight");
+      await arrow("ArrowRight");
+      // wraps back to All
+      expect(tab("all").getAttribute("aria-selected")).toBe("true");
+      await arrow("ArrowLeft");
+      expect(tab("provider:Zed Labs").getAttribute("aria-selected")).toBe("true");
+    });
+
+    it("the Enabled and Free chips combine with the tab and the search", async () => {
+      await openTab();
+      await act(async () => chip("free").click());
+      expect(chip("free").getAttribute("aria-pressed")).toBe("true");
       expect(rows()).toEqual(["zed/free-1"]);
-      await act(async () => tab("enabled").click());
+      await act(async () => chip("free").click());
+      await act(async () => chip("enabled").click());
       // the retired model is not enabled
       expect(rows()).toEqual(["acme/big-1", "acme/small-1", "zed/free-1"]);
-      await act(async () => tab("all").click());
-      const search = q("input[aria-label='Search models']") as HTMLInputElement;
-      const type = async (value: string) =>
-        act(async () => {
-          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-            search,
-            value,
-          );
-          search.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-      await type("zed");
-      expect(rows()).toEqual(["zed/free-1", "zed/retired-1"]);
+      await act(async () => tab("provider:Acme AI").click());
+      expect(rows()).toEqual(["acme/big-1", "acme/small-1"]);
       await type("small");
       expect(rows()).toEqual(["acme/small-1"]);
+      await act(async () => chip("free").click());
+      expect(q("[data-opencode-models]")?.textContent).toContain("No models match.");
+    });
+
+    it("searches over name and provider", async () => {
+      await openTab();
+      await type("zed");
+      expect(rows()).toEqual(["zed/free-1", "zed/retired-1"]);
       await type("nothing");
       expect(q("[data-opencode-models]")?.textContent).toContain("No models match.");
     });
 
-    it("the Enabled switch writes agent.opencode.disabled-models and the Enabled tab follows", async () => {
+    it("falls back to All when the selected provider leaves a refreshed list", async () => {
+      await openTab();
+      await act(async () => tab("provider:Zed Labs").click());
+      expect(rows()).toEqual(["zed/free-1", "zed/retired-1"]);
+      models = async () => MODELS.filter((m) => m.providerId === "acme");
+      await act(async () => {
+        invalidateBackendModels("opencode");
+      });
+      await flush();
+      expect(qa("[data-opencode-tab]").map((t) => t.textContent)).toEqual(["All", "Acme AI"]);
+      expect(tab("all").getAttribute("aria-selected")).toBe("true");
+      expect(rows()).toEqual(["acme/big-1", "acme/small-1"]);
+    });
+
+    it("the Enabled switch writes agent.opencode.disabled-models and the Enabled chip follows", async () => {
       await openTab();
       const sw = () =>
         q("[data-opencode-model='acme/small-1'] button[role=switch]") as HTMLButtonElement;
@@ -279,10 +341,10 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
       await flush();
       expect(writes).toContainEqual([DISABLED_KEY, ["acme/small-1"]]);
       expect(sw().getAttribute("aria-checked")).toBe("false");
-      await act(async () => q("[data-opencode-tab=enabled]")!.click());
+      await act(async () => chip("enabled").click());
       expect(rows()).toEqual(["acme/big-1", "zed/free-1"]);
       // and back on
-      await act(async () => q("[data-opencode-tab=all]")!.click());
+      await act(async () => chip("enabled").click());
       await act(async () => sw().click());
       await flush();
       expect(writes.at(-1)).toEqual([DISABLED_KEY, []]);

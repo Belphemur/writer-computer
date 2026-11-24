@@ -1,8 +1,15 @@
 // The pure side of the models table and the model chip's list for a live backend.
 import { describe, expect, it } from "vite-plus/test";
 import { liveModelChoices } from "@features/agent/web/lib/live-models";
-import { isModelEnabled, resolveModel } from "@/lib/features/agent-backends";
-import { filterModels, formatContext, formatCost, withEnabled } from "../web/lib/models";
+import { isModelEnabled, matchesModelQuery, resolveModel } from "@/lib/features/agent-backends";
+import {
+  filterModels,
+  formatContext,
+  formatCost,
+  providerTabs,
+  resolveProvider,
+  withEnabled,
+} from "../web/lib/models";
 import { BACKEND_MODELS as MODELS } from "./fixtures";
 
 describe("models table rules", () => {
@@ -12,19 +19,44 @@ describe("models table rules", () => {
     expect(isModelEnabled(MODELS[3]!, [])).toBe(false);
   });
 
-  it("filters by tab and by provider or name", () => {
-    const ids = (o: Parameters<typeof filterModels>[1]) => filterModels(MODELS, o).map((m) => m.id);
-    expect(ids({ tab: "all", query: "", disabled: [] })).toHaveLength(4);
-    expect(ids({ tab: "enabled", query: "", disabled: ["acme/small-1"] })).toEqual([
+  it("builds the provider tabs from the data, by name, sorted", () => {
+    expect(providerTabs(MODELS)).toEqual(["Acme AI", "Zed Labs"]);
+    expect(providerTabs([])).toEqual([]);
+    expect(providerTabs([...MODELS].reverse())).toEqual(["Acme AI", "Zed Labs"]);
+  });
+
+  it("falls back to All when the selected provider is gone", () => {
+    expect(resolveProvider("Acme AI", ["Acme AI"])).toBe("Acme AI");
+    expect(resolveProvider("Acme AI", ["Zed Labs"])).toBeNull();
+    expect(resolveProvider(null, ["Zed Labs"])).toBeNull();
+  });
+
+  it("combines the provider, the Enabled and Free chips and the search", () => {
+    const none = { provider: null, enabled: false, free: false, query: "", disabled: [] };
+    const ids = (o: Partial<typeof none>) =>
+      filterModels(MODELS, { ...none, ...o }).map((m) => m.id);
+    expect(ids({})).toHaveLength(4);
+    expect(ids({ provider: "Acme AI" })).toEqual(["acme/big-1", "acme/small-1"]);
+    expect(ids({ free: true })).toEqual(["zed/free-1"]);
+    expect(ids({ enabled: true, disabled: ["acme/small-1"] })).toEqual([
       "acme/big-1",
       "zed/free-1",
     ]);
-    expect(ids({ tab: "free", query: "", disabled: [] })).toEqual(["zed/free-1"]);
-    expect(ids({ tab: "all", query: "acme", disabled: [] })).toEqual([
+    expect(ids({ provider: "Acme AI", enabled: true, disabled: ["acme/small-1"] })).toEqual([
       "acme/big-1",
-      "acme/small-1",
     ]);
-    expect(ids({ tab: "all", query: " FREEBIE ", disabled: [] })).toEqual(["zed/free-1"]);
+    expect(ids({ provider: "Acme AI", free: true })).toEqual([]);
+    expect(ids({ provider: "Zed Labs", enabled: true, free: true })).toEqual(["zed/free-1"]);
+    expect(ids({ provider: "Zed Labs", query: "retired" })).toEqual(["zed/retired-1"]);
+    expect(ids({ query: " FREEBIE " })).toEqual(["zed/free-1"]);
+  });
+
+  it("one query rule: provider and name, case-insensitive, blank matches all", () => {
+    expect(matchesModelQuery("Acme AI", "Big One", " ACME ")).toBe(true);
+    expect(matchesModelQuery("Acme AI", "Big One", "one")).toBe(true);
+    expect(matchesModelQuery(undefined, "Big One", "acme")).toBe(false);
+    expect(matchesModelQuery("Acme AI", "Big One", "  ")).toBe(true);
+    expect(matchesModelQuery("Acme AI", "Big One", "zed")).toBe(false);
   });
 
   it("switching a model writes the list without duplicates", () => {
@@ -45,6 +77,11 @@ describe("models table rules", () => {
 
 describe("the chip's list for a live backend", () => {
   const all = MODELS;
+
+  it("passes the provider and the bare name through, for the menu's groups", () => {
+    const row = liveModelChoices(all, []).find((r) => r.id === "acme/big-1")!;
+    expect(row).toMatchObject({ provider: "Acme AI", name: "Big One", label: "Big One (Acme AI)" });
+  });
 
   it("lists the enabled, available models and a Default entry first", () => {
     const rows = liveModelChoices(all, ["acme/small-1"]);

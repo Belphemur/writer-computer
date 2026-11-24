@@ -31,6 +31,8 @@ export function liveModelChoices(
         id: m.id,
         label: m.provider ? `${m.label} (${m.provider})` : m.label,
         value: m.id,
+        provider: m.provider,
+        name: m.label,
         supportsEffort: efforts.length > 0,
         efforts,
       };

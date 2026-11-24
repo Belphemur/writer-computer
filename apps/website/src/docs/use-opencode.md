@@ -21,7 +21,9 @@ Writer runs its own OpenCode server with its own config. Your global OpenCode co
 
 ## Models
 
-Settings > Agent > OpenCode lists the models your providers offer, with prices. Filter with All, Enabled and Free, or search. Switch a model off and it leaves the chat's model picker. Reasoning effort, when a model has levels, is in the chat's model chip.
+Settings > Agent > OpenCode lists the models your providers offer, with prices. Pick a provider tab (All shows every model), narrow with the Enabled and Free chips, or search; they combine. Switch a model off and it leaves the chat's model picker. Reasoning effort, when a model has levels, is in the chat's model chip.
+
+With two or more agents ready, the chip next to the model chip picks the chat's agent until you send the first message. After that it is locked; choose another agent there for "New chat with …". The model menu has a search when the list is long, and groups models by provider.
 
 Three tier models set what sub-agents and automatic chat titles use. Blank means the chat's own model.
 
@@ -31,7 +33,7 @@ Three tier models set what sub-agents and automatic chat titles use. Blank means
 - **Auto-edit files**: edits in the chat's own session go through; shell commands still ask.
 - **Plan only**: read-only. The agent can read, search, look things up on the web and ask you questions. It writes nothing and runs no shell.
 
-**Auto** and **Don't ask** ask like Ask before edit.
+**Auto** works like Auto-edit files. **Don't ask** works like Ask before edit.
 
 "Always allow" on a card saves an OpenCode rule for the vault's project. The same list is in Settings > Agent > OpenCode, where you can remove a rule.
 

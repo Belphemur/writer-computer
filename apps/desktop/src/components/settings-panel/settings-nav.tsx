@@ -1,11 +1,9 @@
-import { useRef, type KeyboardEvent } from "react";
+import { useRef } from "react";
+import { useRovingTablist } from "@/hooks/use-roving-tablist";
 import type { NavGroup } from "./settings-sections";
 
 export const settingsTabId = (id: string) => `settings-tab-${id}`;
 export const SETTINGS_PANEL_ID = "settings-tabpanel";
-
-const NEXT_KEYS = ["ArrowDown", "ArrowRight"];
-const PREV_KEYS = ["ArrowUp", "ArrowLeft"];
 
 /**
  * The sidebar: a single vertical tablist (roving tabindex). Arrow keys move and select,
@@ -29,18 +27,7 @@ export function SettingsNav({
   const listRef = useRef<HTMLDivElement>(null);
   const ids = groups.flatMap((g) => g.items.map((i) => i.id));
 
-  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    const at = ids.indexOf(selectedId);
-    let next = -1;
-    if (NEXT_KEYS.includes(e.key)) next = (at + 1) % ids.length;
-    else if (PREV_KEYS.includes(e.key)) next = (at - 1 + ids.length) % ids.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = ids.length - 1;
-    if (next < 0 || ids.length === 0) return;
-    e.preventDefault();
-    onSelect(ids[next]);
-    listRef.current?.querySelector<HTMLElement>(`[id="${settingsTabId(ids[next])}"]`)?.focus();
-  }
+  const onKeyDown = useRovingTablist(listRef, { ids, selectedId, onSelect });
 
   return (
     <nav

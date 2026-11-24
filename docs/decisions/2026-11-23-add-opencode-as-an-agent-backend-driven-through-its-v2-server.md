@@ -260,3 +260,13 @@ Four review items of the auto-mode amendment above were decided; where they diff
 2. **The password risk is accepted** and said on the shell approval card (a neutral line for every backend and a sentence from the backend's descriptor), replacing "the card should say ... (open)".
 3. **Plan keeps web fetch and search.**
 4. **`execute` stays denied in Plan.** The capture (`s34` part b, run as the `build` agent) shows the model did not call `execute`; it called the allowed read directly and was not asked. It does not show whether `execute` was offered or whether its inner calls are gated per tool.
+
+## Amended 2026-11-24 (later, decided with the user)
+
+The accepted text and the earlier amendments stand; where they differ, this section wins. Details in [SPECs/opencode-backend-spec.md](../../SPECs/opencode-backend-spec.md): A1, A17, A18, A20, the harness chip and model menu paragraph after A23, section 10.9 and the mode table.
+
+1. **Models table.** The tabs are All first, then one per provider present in the live list (the provider's name as the server reports it, alphabetical); Enabled and Free are toggle chips next to the search and combine with the tab and the search. A provider that leaves a refreshed list falls back to All. The grouping is one helper, `groupByProvider`, shared with the model menu.
+2. **Harness chip in the composer** (replaces the new-chat picker of A20, which sat in the empty state). Next to the model chip, drawn only while two or more backends are usable (their feature on, their program found), labelled from the backend descriptor. Before the first message it switches the chat's backend freely (a draft does not lock it); after it the chip is locked and shows the chat's backend, and choosing another offers "New chat with <product>".
+3. **One model menu for every backend.** A search field above about 8 models, provider headers only when the models come from more than one provider (Claude's short list is unchanged), the Default row, the effort levels and the hiding of switched-off models kept; typing filters, arrows move, Enter picks, Esc closes.
+4. **Permission modes (A1).** `auto` is accept-edits (confined vault edits answered, a worker's included; shell and web ask) and `dontAsk` stays manual. This replaces the gap listed in item 9 of the first 2026-11-24 amendment.
+5. **Confirmed unchanged by the user.** Deleting a chat deletes its OpenCode session even though the note goes to the Trash (A18); Settings starts a server to list models (A17); a skill folder with a link out of the vault is skipped whole. The other auto-mode review items (A2 as replaced, A5, A11 to A16, A19 to A23, "Choose binary…") are kept as decided.

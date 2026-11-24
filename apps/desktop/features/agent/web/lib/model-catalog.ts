@@ -177,6 +177,10 @@ export function modelSupportsEffort(modelSetting: unknown): boolean {
 export type ModelChoice = {
   id: string;
   label: string;
+  /** A live backend's provider and the model's bare name (the menu groups by provider and then
+   *  drops the suffix `label` carries). */
+  provider?: string;
+  name?: string;
   /** What to put in `AgentSettings.model` / `--model`: null for the CLI default. */
   value: string | null;
   supportsEffort: boolean;

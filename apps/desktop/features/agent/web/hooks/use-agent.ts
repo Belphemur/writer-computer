@@ -3,8 +3,9 @@
  * (docs/react-guidelines.md). One selector per hook; imperative actions live in `agent-api.ts`.
  */
 import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { usePaneStore } from "@features/agent/web/stores/pane-store";
-import { skillsKey, useAgentStore } from "@features/agent/web/stores/agent-store";
+import { hasChatStarted, skillsKey, useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { agentSettingsFrom, type ChatModelChoice } from "@features/agent/web/lib/agent-settings";
 import type { AgentPermissionMode } from "@features/agent/web/lib/events";
@@ -50,6 +51,21 @@ export function useActiveChatId() {
 }
 export function useAgentChat(chatId: ChatId | null) {
   return useAgentStore((s) => (chatId ? (s.chats[chatId] ?? null) : null));
+}
+/** What the harness chip needs of a chat: its backend and project, and whether it has started
+ *  (the backend is then locked). Shallow, so a streaming turn does not re-render the chip. */
+export function useChatBackendLock(chatId: ChatId | null) {
+  return useAgentStore(
+    useShallow((s) => {
+      const chat = chatId ? s.chats[chatId] : undefined;
+      return {
+        exists: !!chat,
+        backendId: chat?.backendId ?? null,
+        projectPath: chat?.projectPath ?? null,
+        locked: chat ? hasChatStarted(chat) : false,
+      };
+    }),
+  );
 }
 export function useChatTitle(chatId: ChatId) {
   return useAgentStore((s) => s.chats[chatId]?.title ?? "");

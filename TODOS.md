@@ -142,16 +142,9 @@
 
 ## Up Next
 
-- [ ] Review (decided in auto mode, 2026-11-23/24), OpenCode: confirm or change each. Four items were decided with the user on 2026-11-24 and are out of this list (spec section 2, D1 to D4: the password risk accepted and said on the shell card, Plan keeps web fetch and search, a worker's confined edits answered in accept-edits, `execute` stays denied in Plan after the capture). Spec `SPECs/opencode-backend-spec.md` §2 and §10.9, ADR amendments.
-  - [ ] A1 `auto` is accept-edits plus read tools; `auto` and `dontAsk` ask like `manual`.
-  - [ ] A2 (replaced), the §10.9 permission model: empty session rules outside Plan, roles with their own agent rules, accept-edits and "this chat" answered by Writer.
-  - [ ] Skill folders with a link out of the vault are left out whole.
-  - [ ] A5 titles through `title.rs`; A16 a throwaway session and `/generate`; A23 title sessions are not chat turns.
-  - [ ] A11 tool tables as shared JSON; A12 OpenCode writes the shared `.writer/memory/` with its own tools; A13 one producer of sub-agent state.
-  - [ ] A14 the `agent.backends` point; A15 settings under `agent.opencode.*`; A20 backend per chat, default in Settings.
-  - [ ] A17 one server per window and vault, started by use; A18 delete a chat deletes its session; A19 no `mcp list` process.
-  - [ ] A21 saved rules are the vault's project's ("All projects", read-only, when none holds the vault); A22 one model resolver.
-  - [ ] "Choose binary…" saves the path for the chat's own agent.
+- [ ] A shared `type-into` test helper (set an input's value through the native setter and dispatch `input`), now hand-written in `features/opencode/tests/opencode-settings.test.tsx`, `features/agent/tests/agent-model-menu.test.tsx` and others.
+- [ ] Move `skills-chip`, `context-ring` and the project switcher onto the shared menu hook (`useMenuKeyboard`, `src/hooks/use-menu-keyboard.ts`) and the `ChipMenu` shell.
+- [ ] The model menu's search inside `role=menu` is not the ARIA pattern for a filterable list: rewrite it as a combobox with a listbox.
 - [ ] OpenCode open risks:
   - [ ] The `/api/location` query encoding is unverified.
   - [ ] Flaky `ipc::tests::unix::every_launch_gets_a_new_token`.

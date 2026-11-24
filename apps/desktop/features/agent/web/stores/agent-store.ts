@@ -191,7 +191,8 @@ interface AgentState {
   reloadSession: () => Promise<void>;
   setView: (view: AgentView) => void;
   setBackend: (backend: AgentBackend) => void;
-  newChat: (projectPath?: string | null) => ChatId;
+  /** `backendId`: start on that backend (the user's pick, kept over a later re-resolution). */
+  newChat: (projectPath?: string | null, backendId?: string) => ChatId;
   closeChat: (chatId: ChatId) => void;
   selectChat: (chatId: ChatId) => void;
   cycleChat: (delta: 1 | -1) => void;
@@ -450,16 +451,14 @@ function withChat(s: AgentState, id: ChatId, next: Chat): Pick<AgentState, "chat
 // ---------------------------------------------------------------------------------------------
 // Persistence glue: the note is built from the store's state and written by the debounced saver
 
+/** Has anything been sent in the chat (or is it running or resumed)? Its backend is then fixed. */
+export function hasChatStarted(chat: Chat): boolean {
+  return chat.turns.length > 0 || !!chat.session || !!chat.resumeSessionId || chat.state !== "idle";
+}
+
 /** A chat nothing happened in: no turns, no CLI session, nothing typed or attached. */
 function isUntouchedChat(chat: Chat, draft: Draft | undefined): boolean {
-  return (
-    chat.turns.length === 0 &&
-    !chat.session &&
-    !chat.resumeSessionId &&
-    chat.state === "idle" &&
-    !draft?.text.trim() &&
-    !(draft?.mentions.length ?? 0)
-  );
+  return !hasChatStarted(chat) && !draft?.text.trim() && !(draft?.mentions.length ?? 0);
 }
 
 const persistence = {
@@ -721,14 +720,14 @@ const pickedBackend = new Set<ChatId>();
 
 /** Gives an untouched chat another backend: its note and model choice start over. */
 function applyChatBackend(chatId: ChatId, backendId: string) {
-  const { chats, drafts } = useAgentStore.getState();
-  const chat = chats[chatId];
+  const chat = useAgentStore.getState().chats[chatId];
   if (!chat || chat.backendId === backendId) return;
-  if (!isUntouchedChat(chat, drafts[chatId])) return;
+  // a draft does not lock the backend: only a started chat does
+  if (hasChatStarted(chat)) return;
   useAgentStore.setState((s) => {
     const note = s.notes[chatId];
     return {
-      ...withChat(s, chatId, { ...chat, backendId, resumeSessionId: null }),
+      ...withChat(s, chatId, { ...chat, backendId }),
       notes: note
         ? {
             ...s.notes,
@@ -1113,7 +1112,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       get().newChat();
     },
 
-    newChat: (projectPath) => {
+    newChat: (projectPath, wantedBackend) => {
       // Switching project while the active chat is untouched reuses it instead of stacking
       // another empty "New chat": only its project changes (nothing to carry over). A plain
       // new chat (no project given) always adds a tab.
@@ -1121,6 +1120,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const active = activeId ? get().chats[activeId] : undefined;
       if (
         projectPath !== undefined &&
+        !wantedBackend &&
         active &&
         isUntouchedChat(active, get().drafts[active.chatId])
       ) {
@@ -1142,11 +1142,14 @@ export const useAgentStore = create<AgentState>((set, get) => {
         return active.chatId;
       }
       const chatId = newId();
-      const backendId = resolveDefaultBackend(
-        useSettingsStore.getState().settings["agent.default-backend"],
-        listBackends(),
-        useBackendUsability.getState().usable,
-      );
+      const backendId =
+        wantedBackend ??
+        resolveDefaultBackend(
+          useSettingsStore.getState().settings["agent.default-backend"],
+          listBackends(),
+          useBackendUsability.getState().usable,
+        );
+      if (wantedBackend) pickedBackend.add(chatId);
       const chat = createChat(chatId, {
         projectPath: projectPath ?? defaultProjectPath(),
         backendId,
