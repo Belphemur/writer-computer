@@ -85,7 +85,7 @@ lingua = { version = "=1.8.0", default-features = false, features = ["english", 
 # Local version history (ADR 2026-11-18 sync vaults with a built-in Git feature). Exact pin, minimal
 # features: `sha1` (the hash), `status` (worktree vs index vs HEAD). No network or transport features;
 # only src/git/ names it.
-gix = { version = "=0.90.0", default-features = false, features = ["sha1", "status"] }
+gix = { version = "=0.91.0", default-features = false, features = ["sha1", "status"] }
 pdf_oxide = { version = "=0.3.78", default-features = false }
 
 [target.'cfg(unix)'.dependencies]

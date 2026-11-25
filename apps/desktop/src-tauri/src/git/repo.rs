@@ -1083,7 +1083,12 @@ impl Repo {
                 .to_string(),
         };
         index_file
-            .write(gix::index::write::Options::default())
+            .write(
+                gix::index::write::Options::default(),
+                // `core.sharedRepository` unset: the umask decides, as before 0.91 (the type is
+                // not nameable without gix's `unstable` feature, its default is that policy).
+                Default::default(),
+            )
             .map_err(git)?;
         Ok(id)
     }
@@ -1945,7 +1950,12 @@ impl Repo {
             Ok(())
         })?;
         index_file
-            .write(gix::index::write::Options::default())
+            .write(
+                gix::index::write::Options::default(),
+                // `core.sharedRepository` unset: the umask decides, as before 0.91 (the type is
+                // not nameable without gix's `unstable` feature, its default is that policy).
+                Default::default(),
+            )
             .map_err(git)?;
         Ok(())
     }

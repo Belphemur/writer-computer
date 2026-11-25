@@ -60,6 +60,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## Version history (gitoxide)
 
-- Crate: `gix` 0.90.0 (pinned exactly in `apps/desktop/src-tauri/Cargo.toml`, default features off: only `sha1` and `status`; no network, transport, credential or worktree-mutation features), with the gitoxide crates it pulls in, compiled into the app and the `writer` CLI; only `apps/desktop/src-tauri/src/git/` names it.
+- Crate: `gix` 0.91.0 (pinned exactly in `apps/desktop/src-tauri/Cargo.toml`, default features off: only `sha1` and `status`; no network, transport, credential or worktree-mutation features), with the gitoxide crates it pulls in, compiled into the app and the `writer` CLI; only `apps/desktop/src-tauri/src/git/` names it.
 - Project: <https://github.com/GitoxideLabs/gitoxide>.
 - License: MIT OR Apache-2.0, copyright the gitoxide authors.
