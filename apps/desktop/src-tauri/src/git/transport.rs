@@ -140,7 +140,7 @@ impl Exec {
         name.into()
     }
 
-    fn command(&self, program: &str, cwd: Option<&Path>) -> Command {
+    fn command(&self, program: &std::ffi::OsStr, cwd: Option<&Path>) -> Command {
         let mut cmd = Command::new(program);
         cmd.env("PATH", self.path())
             .env("GIT_TERMINAL_PROMPT", "0")
@@ -169,7 +169,7 @@ impl Exec {
     /// `git` in `root`, with `core.quotepath=off` and, when given, Writer's credential helper.
     pub fn git(&self, root: &Path, helper: Option<&Helper>, args: &[&str]) -> Command {
         let program = self.git_program();
-        let mut cmd = self.command(&program.to_string_lossy(), Some(root));
+        let mut cmd = self.command(&program, Some(root));
         cmd.args(["-c", "core.quotepath=off"]);
         if let Some(h) = helper {
             cmd.args(h.config_args());
@@ -232,14 +232,19 @@ impl Exec {
 
     /// Any other tool with the same environment (`xcode-select`).
     pub fn program(&self, program: &str, args: &[&str]) -> Command {
-        let mut cmd = self.command(program, None);
+        let mut cmd = self.command(std::ffi::OsStr::new(program), None);
         cmd.args(args);
         cmd
     }
 
+    /// [`Exec::program`] for a program path that need not be UTF-8 (the signer).
+    pub fn program_os(&self, program: &std::ffi::OsStr) -> Command {
+        self.command(program, None)
+    }
+
     /// A forge CLI (`gh`, `fj`), found the way [`Exec::git_program`] finds `git`.
     pub fn tool(&self, binary: &str, args: &[&str]) -> Command {
-        let mut cmd = self.command(&self.tool_program(binary).to_string_lossy(), None);
+        let mut cmd = self.command(&self.tool_program(binary), None);
         cmd.args(args);
         cmd
     }
@@ -269,15 +274,27 @@ impl Exec {
         timeout: Duration,
         stdin: Option<Vec<u8>>,
     ) -> Result<Output, RunError> {
-        let timeout = self.budget(timeout)?;
         let what = describe(&cmd);
+        self.run_named(&what, cmd, timeout, stdin)
+    }
+
+    /// [`Exec::run_with`] with the name the log line carries given by the caller, for a call
+    /// whose arguments must not be read for one (a signer's key id).
+    pub fn run_named(
+        &self,
+        what: &str,
+        cmd: Command,
+        timeout: Duration,
+        stdin: Option<Vec<u8>>,
+    ) -> Result<Output, RunError> {
+        let timeout = self.budget(timeout)?;
         let started = Instant::now();
         let mut opts = RunOptions::new(timeout);
         if let Some(bytes) = stdin {
             opts = opts.stdin_bytes(bytes);
         }
         let result = run_bounded(&self.spawner, cmd, &opts);
-        log_call(&what, started.elapsed(), &result);
+        log_call(what, started.elapsed(), &result);
         result
     }
 

@@ -273,7 +273,7 @@ fn git_trace_variables_are_not_passed_to_a_call() {
 
 #[cfg(unix)]
 #[test]
-fn a_signed_commit_logs_its_call_and_never_the_message_or_the_signature() {
+fn a_signed_commit_logs_the_signer_call_and_never_the_message_or_the_signature() {
     use super::signing_tests::{commit_user, sign_with, signer, Through};
     use super::sync::tests::{have_git, World};
     if !have_git() {
@@ -294,7 +294,7 @@ fn a_signed_commit_logs_its_call_and_never_the_message_or_the_signature() {
     assert!(
         git.iter().any(|l| l["fields"]["message"]
             .as_str()
-            .is_some_and(|m| m.starts_with("git commit-tree ok in "))),
+            .is_some_and(|m| m.starts_with("sign-ok ok in "))),
         "{all}"
     );
     for secret in [
@@ -305,4 +305,35 @@ fn a_signed_commit_logs_its_call_and_never_the_message_or_the_signature() {
     ] {
         assert!(!all.contains(secret), "{secret}: {all}");
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_openpgp_signer_call_logs_its_program_and_never_the_key_id() {
+    use super::signing_tests::{commit_user, recording_signer, Through};
+    use super::sync::tests::{have_git, World};
+    if !have_git() {
+        return;
+    }
+    let w = World::new();
+    let d = w.device("A");
+    d.write("Plan.md", "1\n");
+    d.setup();
+    let (program, _log) = recording_signer(&w.home, false, true);
+    for (k, v) in [
+        ("commit.gpgsign", "true"),
+        ("gpg.format", "openpgp"),
+        ("gpg.program", &*program.to_string_lossy()),
+        ("user.signingkey", "KEYID123"),
+    ] {
+        d.git(&["config", k, v]);
+    }
+    let _through = Through::of(&d);
+    d.write("Plan.md", "2\n");
+    let lines = logged(|| {
+        commit_user(&d).unwrap().unwrap();
+    });
+    let all = serde_json::to_string(&lines).unwrap();
+    assert!(all.contains("rec-gpg ok in "), "{all}");
+    assert!(!all.contains("KEYID123"), "{all}");
 }

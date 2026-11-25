@@ -31,21 +31,17 @@ pub enum Error {
     Operation(String),
     #[error("{0}")]
     Git(String),
-    /// Commits are signed (git's configuration says so) and git could not sign: no commit is made.
-    /// `details` is git's sanitized message, for the log and "Details".
+    /// Commits are signed (the configuration says so) and could not be: no commit is made.
+    /// `details` is the signer's sanitized message, for the log and "Details".
     #[error("Signing failed: unlock your key")]
     Signing { details: String },
     #[error(transparent)]
     Io(#[from] io::Error),
 }
 
-/// A signing failure as the engine's error: git's "who are you" is the identity error.
+/// A signing failure as the engine's error.
 fn sign_error(e: signing::SignError) -> Error {
-    if e.no_identity {
-        Error::NoIdentity
-    } else {
-        Error::Signing { details: e.details }
-    }
+    Error::Signing { details: e.details }
 }
 
 fn git<E: std::fmt::Display>(e: E) -> Error {
@@ -255,9 +251,41 @@ thread_local! {
 fn open_gix(root: &Path) -> Result<gix::Repository> {
     #[cfg(test)]
     if ISOLATED.with(|i| i.get()) {
-        return gix::open_opts(root, gix::open::Options::isolated()).map_err(git);
+        return gix::open_opts(root, gix::open::Options::isolated())
+            .map(with_test_global)
+            .map_err(git);
     }
     gix::open(root).map_err(git)
+}
+
+/// Test-only: a test's global git config (`GIT_CONFIG_GLOBAL` of its runner), which an isolated
+/// open does not read, appended to the repository's configuration. Not a faithful copy of gix's
+/// loading: no includes, and the last value of a key only. Production opens with `gix::open`,
+/// which reads the system and global files.
+#[cfg(test)]
+fn with_test_global(mut repo: gix::Repository) -> gix::Repository {
+    let global = TEST_EXEC.with(|e| e.borrow().as_ref().and_then(|x| x.var("GIT_CONFIG_GLOBAL")));
+    let Some(path) = global else { return repo };
+    let file = gix::config::File::from_path_no_includes(path.into(), gix::config::Source::User)
+        .expect("a readable test config");
+    let mut lines = Vec::new();
+    for section in file.sections() {
+        let header = section.header();
+        let mut name = header.name().to_string();
+        if let Some(sub) = header.subsection_name() {
+            name = format!("{name}.{sub}");
+        }
+        for key in section.body().value_names() {
+            let value = section.body().value(key.as_str()).expect("a value");
+            lines.push(format!("{name}.{key}={value}"));
+        }
+    }
+    let mut snapshot = repo.config_snapshot_mut();
+    snapshot
+        .append_config(lines, gix::config::Source::User)
+        .expect("valid test config");
+    snapshot.commit().expect("applied");
+    repo
 }
 
 fn identity<E: std::fmt::Display>(
@@ -321,7 +349,7 @@ impl Repo {
         self
     }
 
-    /// The same repository whose git children (signing) run through `exec`: the sync passes its
+    /// The same repository whose children (the signer, a default key command) run through `exec`: the sync passes its
     /// scope's runner, tests a temporary `HOME`.
     pub fn with_exec(mut self, exec: Exec) -> Repo {
         self.exec = Some(exec);
@@ -345,30 +373,151 @@ impl Repo {
         Some(Exec::new(crate::features::scope::Spawner::detached()))
     }
 
-    /// The runner commits are signed through, `None` when git's configuration says they are not
-    /// (or git is not installed): the gix path is unchanged then. Fails closed: when the
-    /// configuration cannot be read (a timeout, a deadline, a stop, a bad value) there is no
-    /// answer and so no commit ([`Error::Signing`]). Asked once per commit, and once per replay.
-    pub(crate) fn signer(&self) -> Result<Option<Exec>> {
-        let Some(exec) = self.git_exec() else {
-            return Ok(None);
-        };
-        match signing::mode(&exec, &self.root).map_err(sign_error)? {
-            true => Ok(Some(exec)),
-            false => Ok(None),
+    /// The repository's configuration for signing: refused (fail closed) when the repository is
+    /// not fully trusted (not owned by the current user, no `safe.directory`), because gix then
+    /// leaves the repository's own configuration out and `commit.gpgSign` set there would read as
+    /// unset: an unsigned commit the user did not ask for.
+    fn signing_config(&self) -> std::result::Result<&gix::Repository, signing::SignError> {
+        if self.repo.git_dir_trust() != gix::sec::Trust::Full {
+            return Err(signing::SignError::new(
+                "this folder is not trusted by git (safe.directory)",
+            ));
+        }
+        Ok(&self.repo)
+    }
+
+    /// Whether the configuration says commits are signed (`commit.gpgSign`), failing closed:
+    /// unset is off; a value that is not a boolean, or an untrusted repository, is an error and
+    /// the caller makes no commit (never an unsigned one because the question could not be
+    /// answered).
+    fn signing_on(&self) -> std::result::Result<bool, signing::SignError> {
+        match self
+            .signing_config()?
+            .config_snapshot()
+            .try_boolean("commit.gpgSign")
+        {
+            Ok(on) => Ok(on.unwrap_or(false)),
+            Err(_) => Err(signing::SignError::new("unreadable commit.gpgsign")),
         }
     }
 
-    /// What git says about signing here, and whether recent commits are signed.
-    pub fn signing(&self) -> Signing {
-        let Some(exec) = self.git_exec() else {
-            return Signing::default();
+    /// The settings a signing key resolves from: pure reads, nothing runs (`gpg.format`,
+    /// `user.signingkey`, `gpg.ssh.defaultKeyCommand`; never `commit_signing_options`, which
+    /// runs a default key command).
+    fn key_settings(&self) -> signing::KeySettings {
+        signing::KeySettings {
+            format: self.config_string("gpg.format"),
+            key: self.config_string("user.signingkey"),
+            key_command: self.config_string("gpg.ssh.defaultKeyCommand"),
+        }
+    }
+
+    /// Whether a signing key resolves here ([`signing::KeySettings::resolves`]).
+    pub fn signing_key_resolves(&self) -> bool {
+        self.key_settings().resolves()
+    }
+
+    /// The signer, as gix resolves it from the configuration (the options of
+    /// `Commit::sign`). gix never runs a `gpg.ssh.defaultKeyCommand` here: when an ssh signer has
+    /// no key and the command is set, Writer runs it through `exec` (bounded, cancelable) and gix
+    /// is given its first line as `user.signingkey`, in memory.
+    fn signer_spec(&self, exec: &Exec) -> std::result::Result<signing::Signer, signing::SignError> {
+        use gix::objs::signature::Format;
+        let mut repo = self.signing_config()?.clone();
+        let settings = self.key_settings();
+        let ssh = settings.format.as_deref() == Some("ssh");
+        let no_key = settings.key.as_deref().is_none_or(str::is_empty);
+        if let (true, true, Some(command)) = (ssh, no_key, settings.key_command.as_deref()) {
+            let key = signing::default_key(exec, &self.root, command)?;
+            if gix::objs::signature::sign::is_literal_ssh_key(key.as_bytes()).is_none() {
+                return Err(signing::SignError::new(
+                    "The default key command did not print a public key",
+                ));
+            }
+            let mut snapshot = repo.config_snapshot_mut();
+            snapshot
+                .append_config([format!("user.signingkey={key}")], gix::config::Source::Api)
+                .map_err(|e| signing::SignError::from_text(&e.to_string(), &self.root))?;
+            snapshot
+                .commit()
+                .map_err(|e| signing::SignError::from_text(&e.to_string(), &self.root))?;
+        }
+        let options = repo
+            .commit_signing_options()
+            .map_err(|e| signing::SignError::from_text(&e.to_string(), &self.root))?;
+        let literal = options
+            .signing_key
+            .to_str()
+            .and_then(|k| gix::objs::signature::sign::is_literal_ssh_key(k.as_bytes()));
+        let key = match (options.format, literal) {
+            (Format::Ssh, Some(bytes)) => signing::Key::Literal(bytes.to_vec()),
+            _ => signing::Key::Id(options.signing_key.clone()),
         };
+        Ok(signing::Signer {
+            format: match options.format {
+                Format::OpenPgp => signing::Format::OpenPgp,
+                Format::X509 => signing::Format::X509,
+                Format::Ssh => signing::Format::Ssh,
+            },
+            program: options.program,
+            args: options.program_arguments,
+            key,
+            env: options.environment,
+        })
+    }
+
+    /// The runner commits are signed through, `None` when the configuration says they are not:
+    /// the unsigned path is unchanged then. Fails closed: a folder git does not trust is
+    /// [`Error::Operation`] (the repository's own configuration would be ignored, so "signing
+    /// off" could not be believed), and an unreadable `commit.gpgSign` or signing on with no
+    /// runner is [`Error::Signing`]. Asked once per commit, and once per replay.
+    pub(crate) fn signer(&self) -> Result<Option<Exec>> {
+        if self.repo.git_dir_trust() != gix::sec::Trust::Full {
+            return Err(Error::Operation(
+                "This folder is not trusted by git (safe.directory)".into(),
+            ));
+        }
+        if !self.signing_on().map_err(sign_error)? {
+            return Ok(None);
+        }
+        match self.git_exec() {
+            Some(exec) => Ok(Some(exec)),
+            None => Err(sign_error(signing::SignError::new(
+                "no runner for the signer",
+            ))),
+        }
+    }
+
+    /// What the configuration says about signing here, and whether recent commits are signed.
+    pub fn signing(&self) -> Signing {
         Signing {
-            on: signing::enabled(&exec, &self.root),
-            key: signing::key_resolves(&exec, &self.root),
+            on: self.signing_on().unwrap_or(false),
+            key: self.signing_key_resolves(),
             signed_history: self.signed_among_recent(SIGNED_LOOKBACK),
         }
+    }
+
+    /// `commit` with its signature header: the commit's bytes without one are signed by the
+    /// configured signer through `exec` ([`signing::sign`]) and the signature is inserted after
+    /// the committer (`gpgsig`, `gpgsig-sha256` for sha256), replacing any other. The name and
+    /// email are checked first: refused, never cleaned.
+    pub(crate) fn sign_commit(
+        &self,
+        exec: &Exec,
+        mut commit: gix::objs::Commit,
+    ) -> Result<gix::objs::Commit> {
+        use gix::objs::WriteTo;
+        let signer = self.signer_spec(exec).map_err(sign_error)?;
+        let field = gix::objs::commit::signature_field_name(commit.tree.kind());
+        commit.extra_headers.retain(|(name, _)| name != field);
+        let mut payload = Vec::new();
+        // gix refuses a name or email with `<`, `>` or a line break: refused, never cleaned
+        commit
+            .write_to(&mut payload)
+            .map_err(|e| sign_error(signing::SignError::from_text(&e.to_string(), &self.root)))?;
+        let signature = signing::sign(exec, &self.root, &signer, &payload).map_err(sign_error)?;
+        commit.extra_headers.push((field.into(), signature.into()));
+        Ok(commit)
     }
 
     /// Whether commit `id` carries a signature (`gpgsig`, or `gpgsig-sha256`).
@@ -1054,19 +1203,18 @@ impl Repo {
         })?;
         let tree = editor.write().map_err(git)?;
         let id = match signer {
-            // git writes the signed commit object; the branch then moves only if nobody moved it
+            // the signed commit object is written whole; the branch then moves only if nobody
+            // moved it
             Some(exec) => {
                 let parents: Vec<String> = parent.iter().map(|p| p.to_string()).collect();
-                let id = signing::commit_tree(
-                    &exec,
-                    &self.root,
+                let id = self.write_commit(
+                    Some(&exec),
                     &tree.to_string(),
                     &parents,
                     message.render().as_bytes(),
                     &sig_of(&ids.author),
                     &sig_of(&ids.committer),
-                )
-                .map_err(sign_error)?;
+                )?;
                 self.move_head_as(&id, parents.first().map(String::as_str), "commit")?;
                 id
             }
@@ -1781,7 +1929,9 @@ impl Repo {
         Ok(editor.write().map_err(git)?.to_string())
     }
 
-    /// A commit object (no reference moves): the replay's copy of a local commit.
+    /// A commit object (no reference moves): the replay's copy of a local commit, signed by
+    /// `signer` when given (the replayed copy is signed again, as configured: its old signature
+    /// does not hold for a commit with another parent and tree).
     pub fn write_commit(
         &self,
         signer: Option<&Exec>,
@@ -1791,14 +1941,22 @@ impl Repo {
         author: &Sig,
         committer: &Sig,
     ) -> Result<String> {
+        let mut commit = self.build_commit(tree, parents, message, author, committer)?;
         if let Some(exec) = signer {
-            // the replayed copy is signed again, as configured: its old signature does not hold
-            // for a commit with another parent and tree
-            return signing::commit_tree(
-                exec, &self.root, tree, parents, message, author, committer,
-            )
-            .map_err(sign_error);
+            commit = self.sign_commit(exec, commit)?;
         }
+        Ok(self.repo.write_object(&commit).map_err(git)?.to_string())
+    }
+
+    /// The unsigned commit object for `tree` with `parents`, as written to the object database.
+    fn build_commit(
+        &self,
+        tree: &str,
+        parents: &[String],
+        message: &[u8],
+        author: &Sig,
+        committer: &Sig,
+    ) -> Result<gix::objs::Commit> {
         let sig = |s: &Sig| gix::actor::Signature {
             name: s.name.as_str().into(),
             email: s.email.as_str().into(),
@@ -1807,7 +1965,10 @@ impl Repo {
                 offset: s.offset,
             },
         };
-        let commit = gix::objs::Commit {
+        if author.name.is_empty() || committer.name.is_empty() {
+            return Err(Error::NoIdentity);
+        }
+        Ok(gix::objs::Commit {
             tree: gix::ObjectId::from_hex(tree.as_bytes()).map_err(git)?,
             parents: parents
                 .iter()
@@ -1818,8 +1979,49 @@ impl Repo {
             encoding: None,
             message: message.into(),
             extra_headers: Vec::new(),
-        };
-        Ok(self.repo.write_object(&commit).map_err(git)?.to_string())
+        })
+    }
+
+    /// Test seam: the ids of one commit signed by Writer's runner and by `Commit::sign` with the
+    /// same resolved options.
+    #[cfg(test)]
+    pub(super) fn signed_both_ways(
+        &self,
+        exec: &Exec,
+        tree: &str,
+        parents: &[String],
+        message: &[u8],
+        author: &Sig,
+        committer: &Sig,
+    ) -> (String, String) {
+        let plain = self
+            .build_commit(tree, parents, message, author, committer)
+            .unwrap();
+        let ours = self.sign_commit(exec, plain.clone()).unwrap();
+        let theirs = plain
+            .sign(self.repo.commit_signing_options().unwrap())
+            .unwrap();
+        let id = |c: &gix::objs::Commit| self.repo.write_object(c).unwrap().to_string();
+        (id(&ours), id(&theirs))
+    }
+
+    /// Test seam: the same repository opened with reduced trust (a folder another user owns).
+    #[cfg(test)]
+    pub(super) fn reduced_trust(mut self) -> Repo {
+        let options = gix::open::Options::isolated().with_enforced_trust(gix::sec::Trust::Reduced);
+        self.repo = with_test_global(gix::open_opts(&self.root, options).unwrap());
+        self
+    }
+
+    /// Test seam: whether gix accepts the signature of commit `id`.
+    #[cfg(test)]
+    pub(super) fn gix_verifies(&self, id: &str) -> bool {
+        let id = gix::ObjectId::from_hex(id.as_bytes()).unwrap();
+        let commit = self.repo.find_commit(id).unwrap();
+        commit
+            .verify_signature()
+            .unwrap()
+            .is_some_and(|o| o.is_valid())
     }
 
     /// Moves the branch HEAD is on to `new` when it is still at `old` (`None`: not born yet).

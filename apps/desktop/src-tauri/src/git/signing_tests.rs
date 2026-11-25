@@ -1,6 +1,7 @@
-//! Commit signing through the installed git (ADR 2026-11-18, the 2026-11-23 notes): a fake signer
-//! (`gpg.format=ssh`, `gpg.ssh.program` a script) in a temporary `HOME`, never a real key or the
-//! user's configuration. Each test skips without a `git` binary.
+//! Commit signing run by Writer with the options gix resolves (ADR 2026-11-24): a fake signer
+//! (`gpg.format=ssh`, `gpg.ssh.program` a script) in a temporary `HOME`, never the user's keys or
+//! configuration; a throwaway `ssh-keygen` key for the real round trip (skipped without
+//! `ssh-keygen`). The fixture repositories are made with `git`; each test skips without it.
 
 use super::repo::{Error, Repo, TEST_EXEC};
 use super::sync::tests::{have_git, pair, remote_file, run_git, Device, World};
@@ -79,7 +80,7 @@ fn object(d: &Device, rev: &str) -> String {
 }
 
 #[test]
-fn a_commit_is_signed_by_git_when_the_config_says_so() {
+fn a_commit_is_signed_when_the_config_says_so() {
     need_git!();
     let w = World::new();
     let d = w.device("A");
@@ -137,7 +138,7 @@ fn a_commit_is_never_made_unsigned_when_the_signer_fails() {
 }
 
 #[test]
-fn signing_off_never_calls_commit_tree() {
+fn signing_on_or_off_git_runs_nothing_for_it() {
     need_git!();
     let w = World::new();
     // a `git` that records its arguments, then runs the real one
@@ -176,19 +177,17 @@ fn signing_off_never_calls_commit_tree() {
     d.setup();
     d.write("Plan.md", "# Plan\nmore\n");
     assert!(commit_user(&d).unwrap().is_some());
-    let calls = std::fs::read_to_string(&log).unwrap_or_default();
-    assert!(
-        calls.contains("config --get"),
-        "the setting is read: {calls}"
-    );
-    assert!(!calls.contains("commit-tree"), "{calls}");
     assert!(!object(&d, "HEAD").contains("gpgsig"));
-    // and on: the very same flow goes through commit-tree
+    // and on: the same flow signs, with the signer Writer runs
     sign_with(&d, &signer(&w.home, true));
     d.write("Plan.md", "# Plan\nmore\nagain\n");
     commit_user(&d).unwrap();
-    let calls = std::fs::read_to_string(&log).unwrap();
-    assert!(calls.contains("commit-tree -S"), "{calls}");
+    assert!(object(&d, "HEAD").contains("gpgsig "));
+    // git is never asked about signing: no config read, no commit-tree, no identity check
+    let calls = std::fs::read_to_string(&log).unwrap_or_default();
+    for word in ["config --get", "commit-tree", "cat-file"] {
+        assert!(!calls.contains(word), "{word}: {calls}");
+    }
 }
 
 #[test]
@@ -354,35 +353,6 @@ fn a_push_refused_for_missing_signatures_is_its_own_kind() {
     assert_eq!(other.kind, Kind::Other);
 }
 
-/// A `git` first on the path that runs `on` (a shell snippet over `$*`) for the matching calls and
-/// the real git for everything else.
-fn shim(w: &World, name: &str, on: &str) -> Exec {
-    let bin = w.home.join(name);
-    std::fs::create_dir_all(&bin).unwrap();
-    let real = String::from_utf8(
-        std::process::Command::new("sh")
-            .args(["-c", "command -v git"])
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
-    let path = bin.join("git");
-    std::fs::write(
-        &path,
-        format!("#!/bin/sh\n{on}\nexec '{}' \"$@\"\n", real.trim()),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    Exec::new(Spawner::detached())
-        .with_env(w.env())
-        .with_path_prefix(vec![bin])
-}
-
 #[test]
 fn a_configuration_that_cannot_be_read_makes_no_commit_never_an_unsigned_one() {
     need_git!();
@@ -392,39 +362,86 @@ fn a_configuration_that_cannot_be_read_makes_no_commit_never_an_unsigned_one() {
     d.setup();
     let before = d.head();
     d.write("Plan.md", "2\n");
+    let repo = Repo::open(&d.root).unwrap().unwrap();
 
-    // a deadline that already passed (a sync at close, out of budget)
+    // a value that is not a boolean
+    d.git(&["config", "commit.gpgsign", "maybe"]);
+    assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
+    assert!(matches!(
+        Repo::open(&d.root).unwrap().unwrap().signer(),
+        Err(Error::Signing { .. })
+    ));
+    assert_eq!(d.head(), before);
+
+    // signing on with a deadline that already passed (a sync at close, out of budget)
+    sign_with(&d, &signer(&w.home, true));
     let expired = Exec::new(Spawner::detached())
         .with_env(w.env())
         .with_deadline(Instant::now());
     TEST_EXEC.with(|e| *e.borrow_mut() = Some(expired));
-    let repo = Repo::open(&d.root).unwrap().unwrap();
     assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
-    assert!(matches!(repo.signer(), Err(Error::Signing { .. })));
-    assert_eq!(d.head(), before);
-
-    // a read that takes longer than its bound
-    let slow = shim(
-        &w,
-        "slow",
-        "case \"$*\" in *\"config --get\"*) sleep 8;; esac",
-    );
-    TEST_EXEC.with(|e| *e.borrow_mut() = Some(slow));
-    let started = Instant::now();
-    assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
-    assert!(started.elapsed() < Duration::from_secs(7));
     assert_eq!(d.head(), before, "no commit");
     assert_eq!(repo.changes().unwrap().len(), 1, "still pending");
+    TEST_EXEC.with(|e| *e.borrow_mut() = None);
 
-    // a value git cannot read as a boolean
-    TEST_EXEC.with(|e| *e.borrow_mut() = Some(d.exec.clone()));
-    d.git(&["config", "commit.gpgsign", "maybe"]);
-    assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
-    assert_eq!(d.head(), before);
-    // unset is "off": the gix path
+    // unset is "off": the unsigned path
     d.git(&["config", "--unset", "commit.gpgsign"]);
     assert!(commit_user(&d).unwrap().is_some());
+}
+
+#[test]
+fn a_signer_that_does_not_answer_is_killed_and_makes_no_commit() {
+    need_git!();
+    let w = World::new();
+    let d = w.device("A");
+    d.write("Plan.md", "1\n");
+    d.setup();
+    let before = d.head();
+    // records its pid, then becomes `sleep`
+    let pid_file = w.home.join("signer.pid");
+    let hang = w.home.join("sign-hang");
+    std::fs::write(
+        &hang,
+        format!(
+            "#!/bin/sh\necho $$ > '{}'\nexec sleep 60\n",
+            pid_file.display()
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&hang, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    sign_with(&d, &hang);
+    // the runner's budget cuts the signer's own 120 s bound
+    let exec = Exec::new(Spawner::detached())
+        .with_env(w.env())
+        .with_deadline(Instant::now() + Duration::from_secs(4));
+    TEST_EXEC.with(|e| *e.borrow_mut() = Some(exec));
+    d.write("Plan.md", "2\n");
+    let started = Instant::now();
+    assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
     TEST_EXEC.with(|e| *e.borrow_mut() = None);
+    assert!(started.elapsed() < Duration::from_secs(20));
+    assert_eq!(d.head(), before, "no commit");
+    let pid = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .to_string();
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", &pid])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    };
+    let gone = (0..50).any(|_| {
+        std::thread::sleep(Duration::from_millis(100));
+        !alive()
+    });
+    assert!(gone, "the signer was killed");
 }
 
 fn bytes_of(d: &Device, rev: &str) -> Vec<u8> {
@@ -460,7 +477,7 @@ fn the_signed_commit_is_the_gix_commit_plus_its_signature_byte_for_byte() {
     need_git!();
     let w = World::new();
     let d = w.device("A");
-    // a name git cleans (a trailing dot): both paths use the identity git itself resolves
+    // a name with a trailing dot, which git used to clean: written as it is, both ways
     d.git(&["config", "user.name", "Ada W."]);
     sign_with(&d, &signer(&w.home, true));
     let _through = Through::of(&d);
@@ -528,9 +545,9 @@ fn the_signed_commit_is_the_gix_commit_plus_its_signature_byte_for_byte() {
             "{message:?}"
         );
     }
-    // a Latin-1 message would be re-encoded by git: refused, never written as another text
+    // a Latin-1 message is signed exactly as given (gix writes the bytes, nothing re-encodes)
     let latin = b"user(edit): caf\xe9\n".to_vec();
-    let err = repo
+    let id = repo
         .write_commit(
             Some(&exec),
             &tree,
@@ -539,11 +556,11 @@ fn the_signed_commit_is_the_gix_commit_plus_its_signature_byte_for_byte() {
             &data.author,
             &data.committer,
         )
-        .unwrap_err();
-    assert!(matches!(&err, Error::Signing { details } if details.contains("not UTF-8")));
+        .unwrap();
+    assert_eq!(repo.commit_data(&id).unwrap().message, latin);
 
-    // a replayed identity git would write differently is refused, not silently changed (what git
-    // cleans depends on its version: a name that is all crud is cleaned by every one)
+    // an identity that cannot be written as it is (`<`, `>`, a line break, an empty name) is
+    // refused, not cleaned
     let message = b"user(edit): x\n".to_vec();
     let mut cleaned = data.author.clone();
     cleaned.name = "<>".into();
@@ -557,39 +574,39 @@ fn the_signed_commit_is_the_gix_commit_plus_its_signature_byte_for_byte() {
             &data.committer,
         )
         .unwrap_err();
-    assert!(
-        matches!(err, Error::Signing { .. } | Error::NoIdentity),
-        "{err:?}"
-    );
-    cleaned.name = String::new();
-    assert!(repo
-        .write_commit(
-            Some(&exec),
-            &tree,
-            &data.parents,
-            &message,
-            &cleaned,
-            &data.committer
-        )
-        .is_err());
-}
-
-#[test]
-fn gits_who_are_you_from_commit_tree_is_the_identity_error() {
-    need_git!();
-    let w = World::new();
-    let mut d = w.device("A");
-    d.write("Plan.md", "1\n");
-    d.setup();
-    sign_with(&d, &signer(&w.home, true));
-    d.exec = shim(
-        &w,
-        "who",
-        "case \"$*\" in *commit-tree*) echo 'fatal: unable to auto-detect email address' >&2; exit 128;; esac",
-    );
-    let _through = Through::of(&d);
-    d.write("Plan.md", "2\n");
-    assert!(matches!(commit_user(&d), Err(Error::NoIdentity)));
+    assert!(matches!(err, Error::Signing { .. }), "{err:?}");
+    let mut nameless = data.author.clone();
+    nameless.name = String::new();
+    for signer in [Some(&exec), None] {
+        let err = repo
+            .write_commit(
+                signer,
+                &tree,
+                &data.parents,
+                &message,
+                &nameless,
+                &data.committer,
+            )
+            .unwrap_err();
+        assert!(matches!(err, Error::NoIdentity), "{err:?}");
+    }
+    for (name, email) in [("", "a@b"), ("A", "a>b"), ("A\nB", "a@b"), ("A", "a\nb")] {
+        let mut who = data.author.clone();
+        who.name = name.into();
+        who.email = email.into();
+        assert!(
+            repo.write_commit(
+                Some(&exec),
+                &tree,
+                &data.parents,
+                &message,
+                &who,
+                &data.committer
+            )
+            .is_err(),
+            "{name:?} {email:?}"
+        );
+    }
 }
 
 #[test]
@@ -642,4 +659,448 @@ fn signing_turned_on_remakes_unsigned_local_commits_a_remote_refused() {
         "the authors and dates are the originals"
     );
     assert_eq!(remote_file(&w, "Two.md").as_deref(), Some("2\n"));
+}
+
+fn executable(path: &Path, body: &str) {
+    std::fs::write(path, body).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// A fake signer for `format` that answers deterministically and logs its arguments one per
+/// line (the log is cleared between runs); `report` says whether an OpenPGP one reports
+/// `SIG_CREATED`.
+pub(super) fn recording_signer(dir: &Path, ssh: bool, report: bool) -> (PathBuf, PathBuf) {
+    let path = dir.join(if ssh { "rec-ssh" } else { "rec-gpg" });
+    let log = dir.join(if ssh { "ssh.args" } else { "gpg.args" });
+    let record = format!(
+        "for a; do printf '%s\\n' \"$a\" >> '{}'; done\n",
+        log.display()
+    );
+    let body = if ssh {
+        format!(
+            "#!/bin/sh\n{record}for last; do :; done\nprintf -- '-----BEGIN SSH SIGNATURE-----\\r\\nZmFrZQ==\\r\\n-----END SSH SIGNATURE-----\\r\\n' > \"$last.sig\"\n"
+        )
+    } else {
+        let status = if report {
+            "echo '[GNUPG:] SIG_CREATED D 22 8 00 1700000000 ABCDEF' >&2\n"
+        } else {
+            ""
+        };
+        format!(
+            "#!/bin/sh\n{record}cat > /dev/null\n{status}printf -- '-----BEGIN PGP SIGNATURE-----\\r\\n\\r\\nZmFrZQ==\\r\\n-----END PGP SIGNATURE-----\\r\\n'\n"
+        )
+    };
+    executable(&path, &body);
+    (path, log)
+}
+
+/// The arguments the signer logged in its two runs (Writer's, then gix's), a temporary file
+/// (random name) written as `<tmp>`.
+fn logged_args(log: &Path) -> Vec<String> {
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    let _ = std::fs::remove_file(log);
+    let tmp = std::env::temp_dir();
+    text.lines()
+        .map(|l| {
+            if Path::new(l).starts_with(&tmp) {
+                "<tmp>".to_string()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn writer_signs_with_the_same_argv_and_bytes_as_gix_for_every_format() {
+    need_git!();
+    let w = World::new();
+    let d = w.device("A");
+    d.write("Plan.md", "1\n");
+    d.setup();
+    let _through = Through::of(&d);
+    let repo = Repo::open(&d.root).unwrap().unwrap();
+    let data = repo.commit_data(&d.head()).unwrap();
+    let tree = d.git(&["rev-parse", "HEAD^{tree}"]).trim().to_string();
+    let exec = d.exec.clone();
+    let both = |message: &[u8]| {
+        Repo::open(&d.root).unwrap().unwrap().signed_both_ways(
+            &exec,
+            &tree,
+            &data.parents,
+            message,
+            &data.author,
+            &data.committer,
+        )
+    };
+
+    // OpenPGP and X.509
+    for format in ["openpgp", "x509"] {
+        let (program, log) = recording_signer(&w.home, false, true);
+        d.git(&["config", "gpg.format", format]);
+        d.git(&[
+            "config",
+            &format!(
+                "gpg.{}.program",
+                if format == "x509" { "x509" } else { "openpgp" }
+            ),
+            &program.to_string_lossy(),
+        ]);
+        d.git(&["config", "user.signingkey", "KEYID123"]);
+        let (ours, theirs) = both(b"user(edit): a\n");
+        assert_eq!(ours, theirs, "{format}: the same commit object");
+        // CRLF from the signer is folded
+        assert!(!object_text(&d, &ours).contains('\r'));
+        // each run logged the same argv: the fixed arguments, the key last
+        let args = logged_args(&log);
+        let half = args.len() / 2;
+        assert_eq!(args[..half], args[half..], "{format}");
+        assert_eq!(
+            args[..half],
+            ["--status-fd=2", "-bsau", "KEYID123"],
+            "{format}"
+        );
+    }
+
+    // a signer that does not report SIG_CREATED is a failure, not an empty signature
+    let (program, _log) = recording_signer(&w.home, false, false);
+    d.git(&["config", "gpg.format", "openpgp"]);
+    d.git(&["config", "gpg.program", &program.to_string_lossy()]);
+    let repo = Repo::open(&d.root).unwrap().unwrap();
+    let plain = repo
+        .write_commit(
+            None,
+            &tree,
+            &data.parents,
+            b"x\n",
+            &data.author,
+            &data.committer,
+        )
+        .unwrap();
+    assert!(!plain.is_empty());
+    d.git(&["config", "commit.gpgsign", "true"]);
+    d.write("Plan.md", "2\n");
+    let before = d.head();
+    assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
+    assert_eq!(d.head(), before);
+    d.git(&["config", "--unset", "commit.gpgsign"]);
+
+    // SSH, key path and the default key command's absence aside
+    let (program, log) = recording_signer(&w.home, true, true);
+    d.git(&["config", "gpg.format", "ssh"]);
+    d.git(&["config", "gpg.ssh.program", &program.to_string_lossy()]);
+    d.git(&["config", "user.signingkey", "/keys/id_test.pub"]);
+    let (ours, theirs) = both(b"user(edit): b\n");
+    assert_eq!(ours, theirs, "ssh: the same commit object");
+    assert!(!object_text(&d, &ours).contains('\r'));
+    let args = logged_args(&log);
+    let half = args.len() / 2;
+    assert_eq!(args[..half], args[half..]);
+    assert_eq!(
+        args[..half],
+        [
+            "-Y",
+            "sign",
+            "-n",
+            "git",
+            "-f",
+            "/keys/id_test.pub",
+            "<tmp>"
+        ]
+    );
+
+    // SSH with an inline key: a temporary key file and -U
+    d.git(&["config", "user.signingkey", "key::ssh-ed25519 AAAAfake"]);
+    let (ours, theirs) = both(b"user(edit): c\n");
+    assert_eq!(ours, theirs, "inline key: the same commit object");
+    let args = logged_args(&log);
+    let half = args.len() / 2;
+    assert_eq!(args[..half], args[half..]);
+    assert_eq!(
+        args[..half],
+        ["-Y", "sign", "-n", "git", "-f", "<tmp>", "-U", "<tmp>"]
+    );
+}
+
+fn object_text(d: &Device, id: &str) -> String {
+    String::from_utf8_lossy(&bytes_of(d, id)).into_owned()
+}
+
+fn have_tool(name: &str, probe: &str) -> bool {
+    std::process::Command::new(name)
+        .arg(probe)
+        .output()
+        .is_ok_and(|o| o.status.success() || !o.stderr.is_empty() || !o.stdout.is_empty())
+}
+
+/// A throwaway ed25519 key in `dir`: (private key path, the public key line).
+fn throwaway_key(dir: &Path) -> Option<(PathBuf, String)> {
+    let key = dir.join("key");
+    let made = std::process::Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-C", "writer-test", "-f"])
+        .arg(&key)
+        .output()
+        .ok()?;
+    made.status.success().then_some(())?;
+    let public = std::fs::read_to_string(dir.join("key.pub")).ok()?;
+    Some((key, public.trim().to_string()))
+}
+
+/// `gpg.ssh.allowedSignersFile` for the device's committer (`A@example.test`).
+fn allow_signer(d: &Device, dir: &Path, public: &str) {
+    let file = dir.join("allowed_signers");
+    std::fs::write(&file, format!("A@example.test {public}\n")).unwrap();
+    d.git(&[
+        "config",
+        "gpg.ssh.allowedSignersFile",
+        &file.to_string_lossy(),
+    ]);
+}
+
+fn verifies_both_ways(d: &Device, id: &str) {
+    d.git(&["verify-commit", id]);
+    assert!(Repo::open(&d.root).unwrap().unwrap().gix_verifies(id));
+}
+
+#[test]
+fn a_real_ssh_key_signs_and_both_git_and_gix_verify_it() {
+    need_git!();
+    if !have_tool("ssh-keygen", "-?") {
+        eprintln!("skipped: no ssh-keygen");
+        return;
+    }
+    let w = World::new();
+    let Some((key, public)) = throwaway_key(&w.home) else {
+        eprintln!("skipped: ssh-keygen cannot make a key");
+        return;
+    };
+    let d = w.device("A");
+    let _through = Through::of(&d);
+    for (k, v) in [
+        ("commit.gpgsign", "true"),
+        ("gpg.format", "ssh"),
+        ("user.signingkey", &*format!("{}.pub", key.display())),
+    ] {
+        d.git(&["config", k, v]);
+    }
+    allow_signer(&d, &w.home, &public);
+    d.write("Plan.md", "1\n");
+    d.setup();
+    d.write("Plan.md", "2\n");
+    let id = commit_user(&d).unwrap().unwrap();
+    assert!(object_text(&d, &id).contains("gpgsig -----BEGIN SSH SIGNATURE-----"));
+    verifies_both_ways(&d, &id);
+    verifies_both_ways(&d, d.git(&["rev-parse", "HEAD~1"]).trim());
+}
+
+/// A running `ssh-agent` (killed on drop) with `key` loaded, `None` when one cannot start.
+struct Agent {
+    child: std::process::Child,
+    socket: PathBuf,
+}
+
+impl Agent {
+    fn start(dir: &Path, key: &Path) -> Option<Agent> {
+        let socket = dir.join("agent.sock");
+        let child = std::process::Command::new("ssh-agent")
+            .args(["-D", "-a"])
+            .arg(&socket)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        let agent = Agent { child, socket };
+        let ready = (0..50).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            agent.socket.exists()
+        });
+        let added = ready
+            && std::process::Command::new("ssh-add")
+                .arg(key)
+                .env("SSH_AUTH_SOCK", &agent.socket)
+                .output()
+                .is_ok_and(|o| o.status.success());
+        added.then_some(agent)
+    }
+}
+
+impl Drop for Agent {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn an_inline_key_is_signed_through_the_agent_and_verifies() {
+    need_git!();
+    if !have_tool("ssh-keygen", "-?") {
+        eprintln!("skipped: no ssh-keygen");
+        return;
+    }
+    let w = World::new();
+    let Some((key, public)) = throwaway_key(&w.home) else {
+        eprintln!("skipped: ssh-keygen cannot make a key");
+        return;
+    };
+    let sockets = tempfile::tempdir().unwrap();
+    let Some(agent) = Agent::start(sockets.path(), &key) else {
+        eprintln!("skipped: no ssh-agent");
+        return;
+    };
+    let mut d = w.device("A");
+    let mut env = w.env();
+    env.push((
+        "SSH_AUTH_SOCK".into(),
+        agent.socket.to_string_lossy().into_owned(),
+    ));
+    d.exec = Exec::new(Spawner::detached()).with_env(env.clone());
+    d.env = env;
+    let _through = Through::of(&d);
+    // the private half is not in a file the config names: only the agent has it
+    let hidden = w.home.join("hidden");
+    std::fs::create_dir_all(&hidden).unwrap();
+    std::fs::rename(&key, hidden.join("key")).unwrap();
+    for (k, v) in [
+        ("commit.gpgsign", "true"),
+        ("gpg.format", "ssh"),
+        ("user.signingkey", &*format!("key::{public}")),
+    ] {
+        d.git(&["config", k, v]);
+    }
+    allow_signer(&d, &w.home, &public);
+    d.write("Plan.md", "1\n");
+    d.setup();
+    let id = d.head();
+    assert!(object_text(&d, &id).contains("gpgsig -----BEGIN SSH SIGNATURE-----"));
+    verifies_both_ways(&d, &id);
+    drop(agent);
+}
+
+/// An ssh signer that records the permissions and path of the files it is given, writes the
+/// signature, then does `then` (`exit 0`, `exit 1`, `exec sleep 60`).
+fn probing_signer(dir: &Path, log: &Path, then: &str) -> PathBuf {
+    let path = dir.join("probe");
+    executable(
+        &path,
+        &format!(
+            "#!/bin/sh\nprev=\nfor a; do\n  case \"$prev\" in -f) key=\"$a\";; esac\n  prev=\"$a\"\n  last=\"$a\"\ndone\nfor f in \"$key\" \"$last\"; do\n  case \"$f\" in /tmp/*|/var/*|/private/*) printf '%s %s\\n' \"$(ls -ln \"$f\" | cut -c1-10)\" \"$f\" >> '{log}';; esac\ndone\nprintf -- '-----BEGIN SSH SIGNATURE-----\\nZmFrZQ==\\n-----END SSH SIGNATURE-----\\n' > \"$last.sig\"\n{then}\n",
+            log = log.display()
+        ),
+    );
+    path
+}
+
+#[test]
+fn the_signers_temporary_files_are_private_and_gone_after_success_failure_and_timeout() {
+    use super::signing::{Format, Key, Signer};
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("files.log");
+    let root = dir.path();
+    for (then, deadline, ok) in [
+        ("exit 0", 30, true),
+        ("exit 1", 30, false),
+        ("exec sleep 60", 2, false),
+    ] {
+        let _ = std::fs::remove_file(&log);
+        let program = probing_signer(dir.path(), &log, then);
+        let signer = Signer {
+            format: Format::Ssh,
+            program: program.into_os_string(),
+            args: Vec::new(),
+            key: Key::Literal(b"ssh-ed25519 AAAAfake".to_vec()),
+            env: Vec::new(),
+        };
+        let exec = Exec::new(Spawner::detached())
+            .with_deadline(Instant::now() + Duration::from_secs(deadline));
+        let made = super::signing::sign(&exec, root, &signer, b"payload");
+        assert_eq!(made.is_ok(), ok, "{then}: {made:?}");
+        let seen = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<&str> = seen.lines().collect();
+        assert_eq!(
+            lines.len(),
+            2,
+            "{then}: the key file and the payload: {seen}"
+        );
+        for line in lines {
+            let (mode, file) = line.split_once(' ').unwrap();
+            assert_eq!(mode, "-rw-------", "{then}: {file}");
+            assert!(!Path::new(file).exists(), "{then}: {file} is gone");
+            assert!(
+                !Path::new(&format!("{file}.sig")).exists(),
+                "{then}: {file}.sig is gone"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_default_key_command_is_bounded_cancelable_and_its_key_signs_with_the_agent_flag() {
+    need_git!();
+    let w = World::new();
+    let d = w.device("A");
+    d.write("Plan.md", "1\n");
+    d.setup();
+    let before = d.head();
+    let (program, log) = recording_signer(&w.home, true, true);
+    for (k, v) in [
+        ("commit.gpgsign", "true"),
+        ("gpg.format", "ssh"),
+        ("gpg.ssh.program", &*program.to_string_lossy()),
+    ] {
+        d.git(&["config", k, v]);
+    }
+    // a command that never answers: the runner's deadline ends it, no commit, no signer run
+    d.git(&["config", "gpg.ssh.defaultKeyCommand", "sleep 600"]);
+    let exec = Exec::new(Spawner::detached())
+        .with_env(w.env())
+        .with_deadline(Instant::now() + Duration::from_secs(2));
+    TEST_EXEC.with(|e| *e.borrow_mut() = Some(exec));
+    d.write("Plan.md", "2\n");
+    let started = Instant::now();
+    assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
+    assert!(started.elapsed() < Duration::from_secs(15));
+    assert_eq!(d.head(), before, "no commit");
+    assert!(!log.exists(), "the signer never ran");
+    // a command that prints something that is not a key
+    d.git(&["config", "gpg.ssh.defaultKeyCommand", "echo not-a-key"]);
+    TEST_EXEC.with(|e| *e.borrow_mut() = Some(d.exec.clone()));
+    assert!(matches!(commit_user(&d), Err(Error::Signing { .. })));
+    assert_eq!(d.head(), before);
+    // a working one: its first line is the inline key
+    d.git(&[
+        "config",
+        "gpg.ssh.defaultKeyCommand",
+        "echo ssh-ed25519 AAAAfake; echo more",
+    ]);
+    assert!(commit_user(&d).unwrap().is_some());
+    TEST_EXEC.with(|e| *e.borrow_mut() = None);
+    let args = logged_args(&log);
+    assert_eq!(
+        args,
+        ["-Y", "sign", "-n", "git", "-f", "<tmp>", "-U", "<tmp>"]
+    );
+}
+
+#[test]
+fn an_untrusted_folder_makes_no_commit_and_says_so_with_signing_off_too() {
+    need_git!();
+    let w = World::new();
+    let d = w.device("A");
+    d.write("Plan.md", "1\n");
+    d.setup();
+    let before = d.head();
+    d.write("Plan.md", "2\n");
+    let repo = Repo::open(&d.root).unwrap().unwrap().reduced_trust();
+    let changes = repo.changes().unwrap();
+    let message = super::message::Message::chore(super::message::Scope::Setup, "x", "A");
+    match repo.commit(&changes, &message) {
+        Err(Error::Operation(text)) => assert!(text.contains("not trusted by git"), "{text}"),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(d.head(), before);
 }

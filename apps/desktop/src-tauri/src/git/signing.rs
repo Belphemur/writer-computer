@@ -1,28 +1,31 @@
-//! Commit signing through the installed `git` (ADR 2026-11-18, the 2026-11-23 notes): when git's
-//! effective configuration says commits are signed (`commit.gpgsign`, as `git commit` resolves
-//! it: global, includes, the repository's own), every commit Writer makes is written by
-//! `git commit-tree -S`, which applies `gpg.format`, `user.signingkey` and `gpg.program` /
-//! `gpg.ssh.program` exactly as `git commit` would. Writer reads no key and runs no signer itself;
-//! gix only moves the branch afterwards (`Repo::move_head`, compare-and-swap).
+//! Commit signing (ADR 2026-11-18, the 2026-11-23 notes, superseded in part by the gix ADR of
+//! 2026-11-24): when the effective configuration says commits are signed (`commit.gpgSign`, as
+//! gix resolves it: system, global, includes, the repository's own), every commit Writer makes is
+//! signed by the user's own signer, which Writer runs itself through `transport::Exec` (the
+//! scope, the 120 s bound, the stop on feature off, the log line). The options (`gpg.format`,
+//! `user.signingkey`, `gpg.program` / `gpg.ssh.program` and their arguments) are resolved by gix
+//! in `repo.rs` ([`Signer`] is their neutral shape); the argv is gix-object's own, byte for byte
+//! (`signature/sign.rs`), so the commit is the one `Commit::sign` would write. Writer reads no key
+//! material; the signer does.
 //!
-//! Never unsigned: when signing is on and git cannot sign, the caller gets [`SignError`] and makes
-//! no commit. Same environment rules as the other git children (`transport::Exec`).
+//! Never unsigned: when signing is on and the signer fails, the caller gets [`SignError`] and
+//! makes no commit.
 
-use super::repo::Sig;
 use super::transport::{sanitize, Exec, RunError};
-use std::path::Path;
+use std::ffi::OsString;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// The signer may wait for the user (a 1Password approval, a pinentry).
 pub const SIGN_TIMEOUT: Duration = Duration::from_secs(120);
-const CONFIG_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What the status and Settings > Git say about signing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Signing {
-    /// git's effective `commit.gpgsign`: Writer signs.
+    /// The effective `commit.gpgSign`: Writer signs.
     pub on: bool,
-    /// git resolves a signing key (`user.signingkey`, or an ssh default key command).
+    /// A signing key resolves (`user.signingkey`, or an ssh default key command).
     pub key: bool,
     /// Signed commits among the branch's recent ones.
     pub signed_history: bool,
@@ -35,181 +38,267 @@ impl Signing {
     }
 }
 
-/// Why git could not sign: git's own words, sanitized (no vault path, no credentials).
+/// The three settings a key resolves from, as `repo.rs` reads them (pure reads: nothing runs).
+#[derive(Debug, Clone, Default)]
+pub struct KeySettings {
+    pub format: Option<String>,
+    pub key: Option<String>,
+    pub key_command: Option<String>,
+}
+
+impl KeySettings {
+    /// Whether a key to sign with resolves, without reading it: `user.signingkey`, an ssh default
+    /// key command, or OpenPGP's own default (`gpg.format` unset or `openpgp`: the first signature
+    /// decides, Writer never runs the signer to find out).
+    pub fn resolves(&self) -> bool {
+        let openpgp = self
+            .format
+            .as_deref()
+            .is_none_or(|f| f.is_empty() || f == "openpgp");
+        let set = |v: &Option<String>| v.as_deref().is_some_and(|v| !v.is_empty());
+        openpgp || set(&self.key) || set(&self.key_command)
+    }
+}
+
+/// Why signing failed: the signer's own words, sanitized (no vault path, no credentials).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignError {
     pub details: String,
-    /// git says it has no name or email for the commit: the no-identity error, not a signing one.
-    pub no_identity: bool,
 }
 
 impl SignError {
-    fn new(details: impl Into<String>) -> SignError {
+    pub(super) fn new(details: impl Into<String>) -> SignError {
         SignError {
             details: details.into(),
-            no_identity: false,
         }
     }
-}
 
-/// One value of git's effective configuration for `root`, `None` when unset or git failed.
-fn config(exec: &Exec, root: &Path, args: &[&str]) -> Option<String> {
-    let mut all = vec!["config", "--get"];
-    all.extend_from_slice(args);
-    let out = exec.run(exec.git(root, None, &all), CONFIG_TIMEOUT).ok()?;
-    out.ok().then(|| out.stdout.trim().to_string())
-}
-
-/// Whether git's configuration says commits are signed, failing closed: `Ok(false)` only when git
-/// says the setting is unset (exit 1) or is not installed; a read that fails, times out, is cut by
-/// a deadline or is stopped is an error, and the caller makes no commit (never an unsigned one
-/// because the question could not be answered).
-pub fn mode(exec: &Exec, root: &Path) -> Result<bool, SignError> {
-    let cmd = exec.git(
-        root,
-        None,
-        &["config", "--get", "--type=bool", "commit.gpgsign"],
-    );
-    match exec.run(cmd, CONFIG_TIMEOUT) {
-        Err(RunError::Absent) => Ok(false),
-        Err(e) => Err(run_failed(e)),
-        Ok(out) if out.ok() => match out.stdout.trim() {
-            "true" => Ok(true),
-            "false" => Ok(false),
-            _ => Err(SignError::new("unreadable commit.gpgsign")),
-        },
-        Ok(out) if out.code == Some(1) => Ok(false),
-        Ok(out) => Err(failed(&out.stderr, root)),
+    /// A tool's or gix's message with the vault path and credentials taken out.
+    pub(super) fn from_text(text: &str, root: &Path) -> SignError {
+        SignError::new(sanitize(text, root, &[]))
     }
 }
 
-/// [`mode`] for the status: a question that cannot be answered reads as off there (a commit asks
-/// again and fails closed).
-pub fn enabled(exec: &Exec, root: &Path) -> bool {
-    mode(exec, root).unwrap_or(false)
+/// The signature format (`gpg.format`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    OpenPgp,
+    X509,
+    Ssh,
 }
 
-/// Whether git resolves a key to sign with, without reading it: `user.signingkey`, an ssh default
-/// key command, or OpenPGP's own default (`gpg.format` unset or `openpgp`: the first signature
-/// decides, Writer never runs the signer to find out).
-pub fn key_resolves(exec: &Exec, root: &Path) -> bool {
-    let openpgp =
-        config(exec, root, &["gpg.format"]).is_none_or(|f| f.is_empty() || f == "openpgp");
-    openpgp
-        || ["user.signingkey", "gpg.ssh.defaultKeyCommand"]
-            .iter()
-            .any(|k| config(exec, root, &[k]).is_some_and(|v| !v.is_empty()))
+/// The key as given to the signer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Key {
+    /// A key id, identity or key file path.
+    Id(OsString),
+    /// An SSH public key written inline (`key::ssh-ed25519 ...`, the `key::` stripped): a private
+    /// temporary file for the signer, which finds the private half in the agent (`-U`).
+    Literal(Vec<u8>),
 }
 
-/// Writes `commit.gpgsign` to the repository's own config, never the global one.
+/// The signer as gix resolved it from the configuration.
+#[derive(Debug, Clone)]
+pub struct Signer {
+    pub format: Format,
+    pub program: OsString,
+    /// Arguments before the fixed ones.
+    pub args: Vec<OsString>,
+    pub key: Key,
+    /// Environment for the signer only.
+    pub env: Vec<(OsString, OsString)>,
+}
+
+/// Writes `git config --local commit.gpgsign`: the repository's own config, never the global one.
 pub fn set_local(exec: &Exec, root: &Path, on: bool) -> Result<(), SignError> {
     match exec.config_local(root, "commit.gpgsign", if on { "true" } else { "false" }) {
         Ok(out) if out.ok() => Ok(()),
-        Ok(out) => Err(failed(&out.stderr, root)),
+        Ok(out) => Err(SignError::from_text(&out.stderr, root)),
         Err(e) => Err(run_failed(e)),
     }
-}
-
-/// A date as git reads it raw: `<seconds> <+hhmm>`.
-fn raw_date(s: &Sig) -> String {
-    let (sign, abs) = if s.offset < 0 {
-        ('-', -s.offset)
-    } else {
-        ('+', s.offset)
-    };
-    format!(
-        "{} {sign}{:02}{:02}",
-        s.seconds,
-        abs / 3600,
-        (abs % 3600) / 60
-    )
-}
-
-fn failed(text: &str, root: &Path) -> SignError {
-    SignError::new(sanitize(text, root, &[]))
 }
 
 fn run_failed(e: RunError) -> SignError {
     SignError::new(match e {
-        RunError::Absent => "git is not installed".into(),
-        RunError::Timeout => "git or the signer did not answer in time".to_string(),
+        RunError::Absent => "the signing program is not installed".into(),
+        RunError::Timeout => "the signer did not answer in time".to_string(),
         RunError::Cancelled => "stopped".into(),
         RunError::Io(k) => k,
     })
 }
 
-/// The commit object for `tree` with `parents`, signed by git. The message goes on stdin, the
-/// author and committer (with their dates) through the environment, so the commit is exactly the
-/// one Writer would have written unsigned. Returns the commit id; no reference moves.
-pub fn commit_tree(
-    exec: &Exec,
-    root: &Path,
-    tree: &str,
-    parents: &[String],
-    message: &[u8],
-    author: &Sig,
-    committer: &Sig,
-) -> Result<String, SignError> {
-    // git re-encodes a message that is not UTF-8 on its way in (guessing Latin-1) and so writes
-    // another message than the one given: refused, not altered
-    if std::str::from_utf8(message).is_err() {
-        return Err(SignError::new(
-            "git would re-encode this commit message, which is not UTF-8",
-        ));
-    }
-    let mut args: Vec<&str> = vec!["commit-tree", "-S"];
-    for p in parents {
-        args.extend(["-p", p]);
-    }
-    args.push(tree);
-    let mut cmd = exec.git(root, None, &args);
-    cmd.env("GIT_AUTHOR_NAME", &author.name)
-        .env("GIT_AUTHOR_EMAIL", &author.email)
-        .env("GIT_AUTHOR_DATE", raw_date(author))
-        .env("GIT_COMMITTER_NAME", &committer.name)
-        .env("GIT_COMMITTER_EMAIL", &committer.email)
-        .env("GIT_COMMITTER_DATE", raw_date(committer));
+/// The first line `gpg.ssh.defaultKeyCommand` prints: the command is run here, through `Exec`
+/// (the scope, `SIGN_TIMEOUT`, the runner's deadline, killed on stop), never by gix. The caller
+/// checks it is a key and hands it to gix as `user.signingkey`.
+pub fn default_key(exec: &Exec, root: &Path, command: &str) -> Result<String, SignError> {
+    let cmd = exec.program("sh", &["-c", command]);
     let out = exec
-        .run_with(cmd, SIGN_TIMEOUT, Some(message.to_vec()))
+        .run_named("default key command", cmd, SIGN_TIMEOUT, None)
         .map_err(run_failed)?;
-    let id = out.stdout.trim();
-    if out.ok() && !id.is_empty() && id.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return same_identities(exec, root, id, author, committer).map(|()| id.to_string());
+    if !out.ok() {
+        return Err(SignError::from_text(&out.stderr, root));
     }
-    let mut e = failed(&format!("{}\n{}", out.stderr, out.stdout), root);
-    e.no_identity = super::system::is_identity_error(&out.stderr);
-    Err(e)
+    match out.stdout.lines().next().map(str::trim) {
+        Some(line) if !line.is_empty() => Ok(line.to_string()),
+        _ => Err(SignError::new("The default key command printed no key")),
+    }
 }
 
-/// git cleans a name or email on its way in (what it strips depends on its version) and would
-/// write the commit differently from the one Writer means to make: read back what it wrote and
-/// refuse a commit whose author or committer line is not the one asked for, rather than diverge.
-/// The object stays unreferenced.
-fn same_identities(
+/// A private (0600) file in the temporary directory, removed with it.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn with(bytes: &[u8]) -> Result<Scratch, SignError> {
+        let path = std::env::temp_dir().join(format!(".writer-sign-{}", uuid::Uuid::new_v4()));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let file = options.open(&path);
+        let scratch = Scratch(path);
+        let wrote = file.and_then(|mut f| f.write_all(bytes));
+        wrote
+            .map(|()| scratch)
+            .map_err(|_| SignError::new("could not write a temporary signing file"))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// The signer's command: its program, its own arguments and environment, then the fixed ones.
+fn command(exec: &Exec, signer: &Signer, fixed: &[&std::ffi::OsStr]) -> std::process::Command {
+    let mut cmd = exec.program_os(&signer.program);
+    cmd.args(&signer.args).args(fixed);
+    cmd.envs(signer.env.iter().map(|(k, v)| (k, v)));
+    cmd
+}
+
+/// Runs the signer. The log line is the program's name and nothing else: the arguments hold the
+/// key id.
+fn run(
+    exec: &Exec,
+    signer: &Signer,
+    cmd: std::process::Command,
+    stdin: Option<Vec<u8>>,
+) -> Result<super::transport::Output, RunError> {
+    let name = Path::new(&signer.program)
+        .file_name()
+        .map_or_else(|| "signer".into(), |n| n.to_string_lossy().into_owned());
+    exec.run_named(&name, cmd, SIGN_TIMEOUT, stdin)
+}
+
+/// A signature as git embeds it: the signer's CRLF line ends folded to LF.
+fn fold_crlf(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    for (i, b) in input.iter().enumerate() {
+        if !(*b == b'\r' && input.get(i + 1) == Some(&b'\n')) {
+            out.push(*b);
+        }
+    }
+    out
+}
+
+/// The armored signature of `payload` (a commit without its signature header), made by running
+/// the signer with gix-object's argv:
+/// - OpenPGP and X.509: `<program> [args] --status-fd=2 -bsau <key>`, the payload on stdin, the
+///   signature on stdout, `[GNUPG:] SIG_CREATED ` on stderr;
+/// - SSH: `<program> [args] -Y sign -n git -f <key file> [-U] <payload file>`, the signature in
+///   `<payload file>.sig`.
+///
+/// Fails closed: a signer that fails, does not report a signature, times out (`SIGN_TIMEOUT`, the
+/// runner's deadline) or is stopped gives an error, never an empty signature.
+pub fn sign(
     exec: &Exec,
     root: &Path,
-    id: &str,
-    author: &Sig,
-    committer: &Sig,
-) -> Result<(), SignError> {
-    let line = |who: &Sig| format!("{} <{}> {}", who.name, who.email, raw_date(who));
-    let cmd = exec.git(root, None, &["cat-file", "commit", id]);
-    let out = exec.run(cmd, CONFIG_TIMEOUT).map_err(run_failed)?;
-    let header = |key: &str| {
-        out.stdout
-            .lines()
-            .take_while(|l| !l.is_empty())
-            .find_map(|l| l.strip_prefix(key))
-            .map(str::to_string)
-    };
-    if out.ok()
-        && header("author ").as_deref() == Some(&line(author))
-        && header("committer ").as_deref() == Some(&line(committer))
-    {
-        Ok(())
-    } else {
-        Err(SignError::new(
-            "git would change the author or committer name or email of this commit",
-        ))
+    signer: &Signer,
+    payload: &[u8],
+) -> Result<Vec<u8>, SignError> {
+    let key_missing = matches!(&signer.key, Key::Id(k) if k.is_empty());
+    if key_missing {
+        return Err(SignError::new("A signing key is required"));
     }
+    match signer.format {
+        Format::OpenPgp | Format::X509 => sign_gpg(exec, root, signer, payload),
+        Format::Ssh => sign_ssh(exec, root, signer, payload),
+    }
+}
+
+fn sign_gpg(
+    exec: &Exec,
+    root: &Path,
+    signer: &Signer,
+    payload: &[u8],
+) -> Result<Vec<u8>, SignError> {
+    let Key::Id(key) = &signer.key else {
+        return Err(SignError::new("An inline key needs an ssh signer"));
+    };
+    let cmd = command(
+        exec,
+        signer,
+        &["--status-fd=2".as_ref(), "-bsau".as_ref(), key.as_os_str()],
+    );
+    let out = run(exec, signer, cmd, Some(payload.to_vec())).map_err(run_failed)?;
+    if !out.ok() {
+        return Err(SignError::from_text(
+            &format!("{}\n{}", out.stderr, out.stdout),
+            root,
+        ));
+    }
+    if !out
+        .stderr
+        .lines()
+        .any(|l| l.starts_with("[GNUPG:] SIG_CREATED "))
+    {
+        return Err(SignError::new(
+            "The OpenPGP/X.509 signer did not report SIG_CREATED",
+        ));
+    }
+    Ok(fold_crlf(out.stdout.as_bytes()))
+}
+
+fn sign_ssh(
+    exec: &Exec,
+    root: &Path,
+    signer: &Signer,
+    payload: &[u8],
+) -> Result<Vec<u8>, SignError> {
+    let literal;
+    let key_file: &Path = match &signer.key {
+        Key::Id(path) => Path::new(path),
+        Key::Literal(bytes) => {
+            literal = Scratch::with(bytes)?;
+            &literal.0
+        }
+    };
+    let payload_file = Scratch::with(payload)?;
+    let mut signature_path = payload_file.0.as_os_str().to_owned();
+    signature_path.push(".sig");
+    // removed whatever happens next
+    let signature = Scratch(PathBuf::from(signature_path));
+    let mut fixed: Vec<&std::ffi::OsStr> = vec![
+        "-Y".as_ref(),
+        "sign".as_ref(),
+        "-n".as_ref(),
+        "git".as_ref(),
+        "-f".as_ref(),
+        key_file.as_os_str(),
+    ];
+    if matches!(signer.key, Key::Literal(_)) {
+        fixed.push("-U".as_ref());
+    }
+    fixed.push(payload_file.0.as_os_str());
+    let out = run(exec, signer, command(exec, signer, &fixed), None).map_err(run_failed)?;
+    if !out.ok() {
+        return Err(SignError::from_text(
+            &format!("{}\n{}", out.stderr, out.stdout),
+            root,
+        ));
+    }
+    let bytes = std::fs::read(&signature.0)
+        .map_err(|_| SignError::new("The SSH signer produced no signature"))?;
+    Ok(fold_crlf(&bytes))
 }

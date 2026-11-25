@@ -245,14 +245,19 @@ pub fn setup(root: &Path, mode: SetupMode, device: &str) -> Result<()> {
 }
 
 /// The "Sign commits" switch: `commit.gpgsign` in the vault's own `.git/config`, never the global
-/// one. Turning it on needs a signing key git resolves (Writer reads none, and never runs a
-/// signer); turning it off writes `false` locally, which also overrides a global `true`.
+/// one. Turning it on needs a signing key that resolves (Writer reads none, and never runs a
+/// signer to find out); turning it off writes `false` locally, which also overrides a global `true`.
 pub fn set_signing(
     exec: &transport::Exec,
     root: &Path,
     on: bool,
 ) -> std::result::Result<(), String> {
-    if on && !signing::key_resolves(exec, root) {
+    if on
+        && !Repo::open(root)
+            .ok()
+            .flatten()
+            .is_some_and(|r| r.signing_key_resolves())
+    {
         return Err("Set up a signing key in git first".into());
     }
     signing::set_local(exec, root, on).map_err(|_| "Could not change the setting".to_string())
