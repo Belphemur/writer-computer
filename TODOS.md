@@ -65,6 +65,14 @@ Done in code and tested (Rust and jsdom). Not yet seen in a running app. One lin
 
 Open code tasks.
 
+**Git: gix for everything but push and LFS, and Clone from Git** ([ADR gix](docs/decisions/2026-11-24-use-gix-for-everything-but-push-and-lfs.md), [ADR clone](docs/decisions/2026-11-24-start-a-workspace-from-a-git-repository.md), [`SPECs/git-sync-spec.md`](SPECs/git-sync-spec.md)); in order, 1 and 2 in parallel
+
+- [ ] Lane 1, local calls: `git/config_write.rs`, remote methods, identities through gix, delete `system.rs` and `check_reachable`, `test_child.rs`.
+- [ ] Lane 2, signing: gix reads the config and options, Writer runs the signer through `Exec`; rewrite the spec's Signing section.
+- [ ] Lane 3, fetch: `blocking-http-transport-reqwest`, `src/tls.rs`, `git/net.rs`, `classify` split, NoGit notice, binary size gate (+3 MB).
+- [ ] Lane 4, clone engine: `git/clone.rs`, `remote_head_branch`, CLI `writer git:clone` (needs Lanes 1 and 3).
+- [ ] Lane 5, Clone-from-Git UX: `welcome-actions` slot, `git_clone` commands, dialog, palette `git.clone` (needs Lane 4).
+
 **Shared code**
 
 - [ ] A shared `type-into` test helper (set an input's value through the native setter and dispatch `input`), now hand-written in `features/opencode/tests/opencode-settings.test.tsx`, `features/agent/tests/agent-model-menu.test.tsx` and others.
