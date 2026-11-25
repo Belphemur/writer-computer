@@ -527,6 +527,37 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
     });
   });
 
+  describe("tier selects and provider tabs (issue 2)", () => {
+    it("tier selects offer only the server's models of providers that are on", async () => {
+      useSettingsStore.setState((s) => ({
+        settings: { ...s.settings, [PROVIDERS_KEY]: ["zed"] },
+      }));
+      providers = [
+        { id: "acme", name: "Acme AI", off: false },
+        { id: "zed", name: "Zed Labs", off: true },
+      ];
+      await openTab();
+      for (const tier of ["cheap", "standard", "strong"]) {
+        const select = q(`[data-opencode-tier=${tier}] select`) as HTMLSelectElement;
+        const offered = [...select.options].map((o) => o.value).filter(Boolean);
+        expect(offered.length).toBeGreaterThan(0);
+        expect(offered.every((v) => v.startsWith("acme/"))).toBe(true);
+      }
+    });
+
+    it("the provider tabs are the server's list and wrap: no sideways scroll", async () => {
+      await openTab();
+      const list = q("[role=tablist][aria-label=Providers]")!;
+      expect(list.className).toContain("flex-wrap");
+      expect(list.className).not.toMatch(/overflow-x/);
+      expect(qa("[data-opencode-tab]").map((t) => t.textContent)).toEqual([
+        "All",
+        "Acme AI",
+        "Zed Labs",
+      ]);
+    });
+  });
+
   describe("saved permission rules", () => {
     it("lists the rules, says nothing about the account, and removes one by id", async () => {
       await openTab();

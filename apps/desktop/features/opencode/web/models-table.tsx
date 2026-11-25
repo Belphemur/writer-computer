@@ -86,7 +86,7 @@ function Row({
   );
 }
 
-/** The model list of OpenCode's server: an All tab and one per provider, Enabled and Free chips and
+/** The model list of OpenCode's server: an All tab and one per provider (the tabs wrap, never scroll), Enabled and Free chips and
  *  a search over provider and name (all combine), an Enabled switch per model that writes
  *  `agent.opencode.disabled-models`, and, on a provider's tab, one switch for the provider
  *  (`onProvider`; an off provider keeps its tab and its models show off). */
@@ -150,7 +150,7 @@ export function ModelsTable({
         role="tablist"
         aria-label="Providers"
         onKeyDown={onTabKeys}
-        className="mb-2 flex gap-1 overflow-x-auto"
+        className="mb-2 flex flex-wrap gap-1"
       >
         {tabs.map((t) => (
           <button

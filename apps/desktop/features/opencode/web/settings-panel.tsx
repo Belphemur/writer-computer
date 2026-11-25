@@ -6,7 +6,6 @@ import { SELECT, SelectRow } from "@/components/settings-panel/select-row";
 import {
   agentBackendContributions,
   EFFORT_LABEL,
-  isModelEnabled,
   resolveModel,
   selectableEfforts,
   stringList,
@@ -24,6 +23,7 @@ import {
   type ProviderRow,
 } from "./ipc";
 import { ModelsTable } from "./models-table";
+import { isModelOn, offProviderNames } from "./lib/models";
 import { SavedRules } from "./saved-rules";
 
 const BUTTON =
@@ -43,6 +43,7 @@ function ModelSelect({
   value,
   models,
   disabled,
+  offProviders,
   onChange,
 }: {
   label: string;
@@ -50,9 +51,11 @@ function ModelSelect({
   value: string;
   models: readonly BackendModel[];
   disabled: readonly string[];
+  /** Provider names switched off: none of their models is offered. */
+  offProviders: readonly string[];
   onChange: (value: string) => void;
 }) {
-  const offered = models.filter((m) => isModelEnabled(m, disabled));
+  const offered = models.filter((m) => isModelOn(m, disabled, offProviders));
   const stray = value && !offered.some((m) => m.id === value);
   return (
     <select
@@ -90,6 +93,7 @@ export function OpencodeSettingsPanel() {
   const disabledProviders = stringList(settings[OPENCODE_KEYS.disabledProviders]);
   const binaryPath = text(settings[OPENCODE_KEYS.binaryPath]);
   const [providers, setProviders] = useState<readonly ProviderRow[]>([]);
+  const offProviders = offProviderNames(providers, disabledProviders);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig | null>(null);
   const ready = state.status === "ready";
@@ -180,6 +184,7 @@ export function OpencodeSettingsPanel() {
           value={model}
           models={models}
           disabled={disabled}
+          offProviders={offProviders}
           onChange={(v) => void setSetting(OPENCODE_KEYS.model, v)}
         />
       </SelectRow>
@@ -208,6 +213,7 @@ export function OpencodeSettingsPanel() {
               value={text(settings[key])}
               models={models}
               disabled={disabled}
+              offProviders={offProviders}
               onChange={(v) => void setSetting(key, v)}
             />
           </div>

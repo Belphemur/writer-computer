@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- OpenCode: the provider tabs in Settings > Agent > OpenCode wrap onto more lines instead of scrolling sideways with a scrollbar. Fixes #2.
+
 ## 0.10.0 - 2026-11-24
 
 - Agent: Settings > Agent has an MCP servers menu under each agent (search, a switch per server, its state, "Checked N min ago · Refresh"). For Claude, a server you switch off is hidden from the chat and its sub-agents (it still starts) and open chats restart to apply it. The Ready badge shows the program's version.
